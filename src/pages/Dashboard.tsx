@@ -1,277 +1,181 @@
-import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Mail, TrendingUp, Clock, Calendar, AlertCircle } from 'lucide-react';
-import { Button } from '../components/ui/button';
-import { supabase } from '../lib/supabase';
+// Later we will replace mock data with API:
+// GET /api/reports/weekly
+// GET /api/messages/blocked?limit=50
+// POST /api/settings (strictness, digest_frequency)
+// POST /api/gmail/label/restore { gmail_msg_id }
 
-interface EmailDecision {
-  id: string;
-  gmail_msg_id: string;
-  from_email: string;
-  from_domain: string;
-  received_at: string;
-  decision: 'unclassified' | 'outreach' | 'keep';
-  mailbox_id: string;
-}
+import { useState, useEffect, useMemo } from 'react';
+import { Settings, User } from 'lucide-react';
+import { useStrictness } from '../hooks/useStrictness';
+import { KpiCards } from '../components/dashboard/KpiCards';
+import { StrictnessSelector } from '../components/dashboard/StrictnessSelector';
+import { WeeklyChart } from '../components/dashboard/WeeklyChart';
+import { BlockedTable, BlockedEmail } from '../components/dashboard/BlockedTable';
+import { SettingsDrawer } from '../components/dashboard/SettingsDrawer';
+import { Toast } from '../components/dashboard/Toast';
 
-interface Stats {
-  total14Days: number;
-  today: number;
-  thisWeek: number;
-}
+const BASE_WEEKLY_DATA = [
+  { day: 'Mon', count: 42 },
+  { day: 'Tue', count: 37 },
+  { day: 'Wed', count: 51 },
+  { day: 'Thu', count: 34 },
+  { day: 'Fri', count: 29 },
+  { day: 'Sat', count: 18 },
+  { day: 'Sun', count: 22 },
+];
+
+const MOCK_BLOCKED_EMAILS: BlockedEmail[] = [
+  { id: '1', sender: 'sara@leadgenpro.io', subject: 'Quick intro to 10x pipeline', score: 0.86, dateISO: '2025-10-05T10:32:00Z' },
+  { id: '2', sender: 'mark@outreach.agency', subject: 'Scaling your B2B sales', score: 0.91, dateISO: '2025-10-05T09:15:00Z' },
+  { id: '3', sender: 'alex@growthhacks.com', subject: 'Partnership opportunity?', score: 0.78, dateISO: '2025-10-05T08:42:00Z' },
+  { id: '4', sender: 'jenny@salesboost.net', subject: 'Re: Your LinkedIn profile', score: 0.82, dateISO: '2025-10-04T16:20:00Z' },
+  { id: '5', sender: 'david@prospectpro.io', subject: 'Increase conversions by 200%', score: 0.89, dateISO: '2025-10-04T14:55:00Z' },
+  { id: '6', sender: 'lisa@marketingwhiz.com', subject: 'Quick question about your business', score: 0.75, dateISO: '2025-10-04T11:30:00Z' },
+  { id: '7', sender: 'tom@leadgen360.com', subject: 'Free demo available', score: 0.84, dateISO: '2025-10-04T09:18:00Z' },
+  { id: '8', sender: 'emily@bizgrowth.io', subject: 'Saw your company on LinkedIn', score: 0.79, dateISO: '2025-10-03T15:45:00Z' },
+  { id: '9', sender: 'chris@salesengine.net', subject: 'Exclusive invite for you', score: 0.87, dateISO: '2025-10-03T13:22:00Z' },
+  { id: '10', sender: 'rachel@outboundpro.com', subject: 'Let\'s connect this week', score: 0.72, dateISO: '2025-10-03T10:10:00Z' },
+  { id: '11', sender: 'mike@growthstrat.io', subject: 'Your competitors are doing this', score: 0.88, dateISO: '2025-10-02T16:35:00Z' },
+  { id: '12', sender: 'susan@leadstream.com', subject: 'Thought you might be interested', score: 0.76, dateISO: '2025-10-02T14:12:00Z' },
+  { id: '13', sender: 'james@prospector.net', subject: 'Quick chat about growth?', score: 0.81, dateISO: '2025-10-02T11:45:00Z' },
+  { id: '14', sender: 'anna@bizdev360.io', subject: 'Introducing our new platform', score: 0.85, dateISO: '2025-10-01T15:20:00Z' },
+  { id: '15', sender: 'kevin@salesautomation.com', subject: 'Automate your outreach', score: 0.90, dateISO: '2025-10-01T12:05:00Z' },
+  { id: '16', sender: 'nicole@leadfactory.io', subject: 'Generate 500+ leads/month', score: 0.83, dateISO: '2025-10-01T09:30:00Z' },
+  { id: '17', sender: 'brian@growthhacker.net', subject: 'See how we helped [Company]', score: 0.77, dateISO: '2025-09-30T14:50:00Z' },
+  { id: '18', sender: 'karen@salesops.io', subject: 'Noticed you\'re hiring', score: 0.74, dateISO: '2025-09-30T11:15:00Z' },
+  { id: '19', sender: 'steve@prospecting.com', subject: 'New way to reach customers', score: 0.86, dateISO: '2025-09-30T08:40:00Z' },
+  { id: '20', sender: 'melissa@outreach247.io', subject: 'Can I send you some info?', score: 0.80, dateISO: '2025-09-29T16:25:00Z' },
+];
 
 export function Dashboard() {
-  const [stats, setStats] = useState<Stats>({ total14Days: 0, today: 0, thisWeek: 0 });
-  const [emails, setEmails] = useState<EmailDecision[]>([]);
+  const {
+    strictness,
+    setStrictness,
+    digestFrequency,
+    setDigestFrequency,
+    multiplier,
+    scoreThreshold,
+    falsePositiveRate,
+    helperText,
+  } = useStrictness();
+
   const [loading, setLoading] = useState(true);
-  const [labeling, setLabeling] = useState<string | null>(null);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [showToast, setShowToast] = useState(false);
 
   useEffect(() => {
-    loadData();
+    const timer = setTimeout(() => setLoading(false), 600);
+    return () => clearTimeout(timer);
   }, []);
 
-  const loadData = async () => {
-    try {
-      const now = new Date();
-      const fourteenDaysAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
-      const startOfToday = new Date(now.setHours(0, 0, 0, 0));
-      const startOfWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const weeklyData = useMemo(() => {
+    return BASE_WEEKLY_DATA.map(({ day, count }) => ({
+      day,
+      count: Math.min(Math.round(count * multiplier), 99),
+    }));
+  }, [multiplier]);
 
-      const { data: allDecisions, error: decisionsError } = await supabase
-        .from('decisions')
-        .select('*')
-        .gte('received_at', fourteenDaysAgo.toISOString())
-        .order('received_at', { ascending: false })
-        .limit(50);
+  const filteredEmails = useMemo(() => {
+    return MOCK_BLOCKED_EMAILS.filter(email => email.score >= scoreThreshold);
+  }, [scoreThreshold]);
 
-      if (decisionsError) throw decisionsError;
+  const blockedThisWeek = useMemo(() => {
+    return weeklyData.reduce((sum, day) => sum + day.count, 0);
+  }, [weeklyData]);
 
-      const decisions = allDecisions || [];
+  const blockedToday = useMemo(() => {
+    return Math.round(BASE_WEEKLY_DATA[0].count * multiplier);
+  }, [multiplier]);
 
-      const total14Days = decisions.length;
-      const today = decisions.filter(d =>
-        new Date(d.received_at) >= startOfToday
-      ).length;
-      const thisWeek = decisions.filter(d =>
-        new Date(d.received_at) >= startOfWeek
-      ).length;
+  const potentialFalsePositives = useMemo(() => {
+    return Math.ceil(blockedThisWeek * falsePositiveRate);
+  }, [blockedThisWeek, falsePositiveRate]);
 
-      setStats({ total14Days, today, thisWeek });
-      setEmails(decisions);
-    } catch (error) {
-      console.error('Failed to load dashboard data:', error);
-    } finally {
-      setLoading(false);
-    }
+  const timeSaved = useMemo(() => {
+    return Math.round(blockedThisWeek * 0.5);
+  }, [blockedThisWeek]);
+
+  const handleRestore = (id: string) => {
+    setToastMessage('Restored (demo)');
+    setShowToast(true);
   };
 
-  const handleLabel = async (emailId: string, gmailMsgId: string, mailboxId: string, action: 'outreach' | 'keep') => {
-    setLabeling(emailId);
-    try {
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const response = await fetch(`${supabaseUrl}/functions/v1/gmail-label`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-        },
-        body: JSON.stringify({
-          gmail_msg_id: gmailMsgId,
-          mailbox_id: mailboxId,
-          action,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to apply label');
-      }
-
-      await loadData();
-    } catch (error) {
-      console.error('Failed to apply label:', error);
-      alert('Failed to apply label. Please try again.');
-    } finally {
-      setLabeling(null);
-    }
+  const handleSaveSettings = () => {
+    setToastMessage('Settings saved successfully');
+    setShowToast(true);
   };
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
-
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return date.toLocaleDateString();
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading dashboard...</p>
-        </div>
-      </div>
-    );
-  }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <nav className="bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center gap-2">
-              <Mail className="w-6 h-6 text-blue-600" />
-              <span className="text-xl font-bold text-gray-900">Inbox Defender</span>
-            </div>
-            <div className="flex items-center gap-4">
-              <Link to="/settings" className="text-gray-600 hover:text-gray-900">
-                Settings
-              </Link>
+    <div className="min-h-screen bg-zinc-950">
+      <nav className="border-b border-zinc-800 bg-zinc-900/50 backdrop-blur-sm">
+        <div className="max-w-7xl mx-auto px-6 py-4">
+          <div className="flex items-center justify-between">
+            <h1 className="text-xl font-semibold text-white">Inbox Defender</h1>
+            <div className="flex items-center gap-3">
+              <button
+                disabled
+                className="px-4 py-2 text-sm text-zinc-500 border border-zinc-800 rounded-lg cursor-not-allowed"
+              >
+                Connect Gmail
+              </button>
+              <button
+                onClick={() => setIsSettingsOpen(true)}
+                className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
+              >
+                <Settings className="w-5 h-5" />
+              </button>
+              <div className="w-8 h-8 bg-zinc-800 rounded-lg flex items-center justify-center">
+                <User className="w-4 h-4 text-zinc-400" />
+              </div>
             </div>
           </div>
         </div>
       </nav>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Dashboard</h1>
-          <p className="text-gray-600">Email ingestion and filtering overview</p>
+      <main className="max-w-7xl mx-auto px-6 py-8 space-y-8">
+        <KpiCards
+          blockedThisWeek={blockedThisWeek}
+          blockedToday={blockedToday}
+          potentialFalsePositives={potentialFalsePositives}
+          timeSaved={timeSaved}
+          loading={loading}
+        />
+
+        <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-6">
+          <h3 className="text-lg font-semibold text-white mb-2">Filter Strictness</h3>
+          <StrictnessSelector
+            value={strictness}
+            onChange={setStrictness}
+            helperText={helperText}
+          />
         </div>
 
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-8 flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-          <div>
-            <p className="text-blue-900 font-medium">Filtering is in preview</p>
-            <p className="text-blue-800 text-sm">
-              We're ingesting emails now. Auto-labeling will start in the next sprint.
-            </p>
-          </div>
-        </div>
+        <WeeklyChart data={weeklyData} />
 
-        <div className="grid md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center gap-3 mb-2">
-              <Calendar className="w-5 h-5 text-gray-400" />
-              <p className="text-sm text-gray-600 font-medium">Last 14 Days</p>
-            </div>
-            <p className="text-3xl font-bold text-gray-900">{stats.total14Days}</p>
-            <p className="text-sm text-gray-500 mt-1">Total emails ingested</p>
-          </div>
+        <BlockedTable
+          emails={filteredEmails}
+          onRestore={handleRestore}
+          loading={loading}
+        />
+      </main>
 
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center gap-3 mb-2">
-              <Clock className="w-5 h-5 text-gray-400" />
-              <p className="text-sm text-gray-600 font-medium">Today</p>
-            </div>
-            <p className="text-3xl font-bold text-gray-900">{stats.today}</p>
-            <p className="text-sm text-gray-500 mt-1">Emails today</p>
-          </div>
+      <SettingsDrawer
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        strictness={strictness}
+        onStrictnessChange={setStrictness}
+        digestFrequency={digestFrequency}
+        onDigestFrequencyChange={setDigestFrequency}
+        helperText={helperText}
+        onSave={handleSaveSettings}
+      />
 
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center gap-3 mb-2">
-              <TrendingUp className="w-5 h-5 text-gray-400" />
-              <p className="text-sm text-gray-600 font-medium">This Week</p>
-            </div>
-            <p className="text-3xl font-bold text-gray-900">{stats.thisWeek}</p>
-            <p className="text-sm text-gray-500 mt-1">Past 7 days</p>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <h2 className="text-lg font-semibold text-gray-900">Recent Emails</h2>
-            <p className="text-sm text-gray-600">Last 50 ingested emails</p>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    From
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Domain
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Received
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Status
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {emails.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="px-6 py-12 text-center">
-                      <Mail className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                      <p className="text-gray-500">No emails ingested yet</p>
-                      <p className="text-sm text-gray-400 mt-1">
-                        Connect a mailbox to start seeing data
-                      </p>
-                    </td>
-                  </tr>
-                ) : (
-                  emails.map((email) => (
-                    <tr key={email.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 text-sm text-gray-900 max-w-xs truncate">
-                        {email.from_email || 'Unknown'}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-600">
-                        {email.from_domain || '-'}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-600">
-                        {formatDate(email.received_at)}
-                      </td>
-                      <td className="px-6 py-4">
-                        <span
-                          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                            email.decision === 'unclassified'
-                              ? 'bg-gray-100 text-gray-800'
-                              : email.decision === 'outreach'
-                              ? 'bg-orange-100 text-orange-800'
-                              : 'bg-green-100 text-green-800'
-                          }`}
-                        >
-                          {email.decision}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-sm space-x-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleLabel(email.id, email.gmail_msg_id, email.mailbox_id, 'outreach')}
-                          disabled={labeling === email.id || email.decision === 'outreach'}
-                        >
-                          {labeling === email.id ? 'Labeling...' : 'Mark Outreach'}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleLabel(email.id, email.gmail_msg_id, email.mailbox_id, 'keep')}
-                          disabled={labeling === email.id || email.decision === 'keep'}
-                        >
-                          Keep
-                        </Button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
+      <Toast
+        message={toastMessage}
+        isVisible={showToast}
+        onClose={() => setShowToast(false)}
+      />
     </div>
   );
 }
