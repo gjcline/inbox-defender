@@ -1,6 +1,8 @@
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState } from 'react';
+import { supabase } from '../lib/supabase';
+import { Loader2 } from 'lucide-react';
 import { HeroSection } from '../components/ui/hero-section-9';
 import { Button } from '../components/ui/button';
 import {
@@ -17,6 +19,29 @@ import {
 export function Landing() {
   const navigate = useNavigate();
   const [openFaq, setOpenFaq] = useState<number | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleGoogleSignIn = async () => {
+    try {
+      setIsLoading(true);
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/dashboard`,
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent',
+          },
+        },
+      });
+
+      if (error) throw error;
+    } catch (error) {
+      console.error('Error signing in:', error);
+      alert('Failed to sign in with Google. Please try again.');
+      setIsLoading(false);
+    }
+  };
 
   const toggleFaq = (index: number) => {
     setOpenFaq(openFaq === index ? null : index);
@@ -204,8 +229,8 @@ export function Landing() {
                 </li>
               </ul>
 
-              <Button variant="outline" className="w-full" onClick={() => navigate('/connect')}>
-                Start Personal
+              <Button variant="outline" className="w-full" onClick={handleGoogleSignIn} disabled={isLoading}>
+                {isLoading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Connecting...</> : 'Start Personal'}
               </Button>
             </motion.div>
 
@@ -242,8 +267,8 @@ export function Landing() {
                 </li>
               </ul>
 
-              <Button variant="secondary" className="w-full bg-white text-blue-600 hover:bg-gray-50" onClick={() => navigate('/connect')}>
-                Start Business
+              <Button variant="secondary" className="w-full bg-white text-blue-600 hover:bg-gray-50" onClick={handleGoogleSignIn} disabled={isLoading}>
+                {isLoading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Connecting...</> : 'Start Business'}
               </Button>
             </motion.div>
           </div>
@@ -396,8 +421,8 @@ export function Landing() {
       >
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           <motion.div variants={itemVariants} className="text-center mb-16">
-            <Button size="lg" onClick={() => navigate('/connect')}>
-              Connect Gmail
+            <Button size="lg" onClick={handleGoogleSignIn} disabled={isLoading}>
+              {isLoading ? <><Loader2 className="w-5 h-5 mr-2 animate-spin" />Connecting...</> : 'Sign in with Google'}
             </Button>
           </motion.div>
 

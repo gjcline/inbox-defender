@@ -2,7 +2,8 @@ import * as React from "react"
 import { useNavigate } from 'react-router-dom'
 import { cn } from '../../lib/utils'
 import { Button } from './button'
-import { Menu, X, Shield, Lock } from 'lucide-react'
+import { Menu, X, Shield, Lock, Loader2 } from 'lucide-react'
+import { supabase } from '../../lib/supabase'
 
 const menuItems = [
     { name: 'Pricing', href: '#pricing' },
@@ -13,6 +14,29 @@ const menuItems = [
 export const HeroSection = () => {
     const navigate = useNavigate()
     const [menuState, setMenuState] = React.useState(false)
+    const [isLoading, setIsLoading] = React.useState(false)
+
+    const handleGoogleSignIn = async () => {
+        try {
+            setIsLoading(true)
+            const { error } = await supabase.auth.signInWithOAuth({
+                provider: 'google',
+                options: {
+                    redirectTo: `${window.location.origin}/dashboard`,
+                    queryParams: {
+                        access_type: 'offline',
+                        prompt: 'consent',
+                    },
+                },
+            })
+
+            if (error) throw error
+        } catch (error) {
+            console.error('Error signing in:', error)
+            alert('Failed to sign in with Google. Please try again.')
+            setIsLoading(false)
+        }
+    }
     return (
         <div>
             <header>
@@ -65,8 +89,16 @@ export const HeroSection = () => {
                                     </Button>
                                     <Button
                                         size="sm"
-                                        onClick={() => navigate('/connect')}>
-                                        <span>Connect Gmail</span>
+                                        onClick={handleGoogleSignIn}
+                                        disabled={isLoading}>
+                                        {isLoading ? (
+                                            <>
+                                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                                Connecting...
+                                            </>
+                                        ) : (
+                                            <span>Sign in with Google</span>
+                                        )}
                                     </Button>
                                 </div>
                             </div>
@@ -99,8 +131,15 @@ export const HeroSection = () => {
                             <p className="mx-auto my-8 max-w-2xl text-xl text-gray-600">Inbox Defender auto-routes cold outreach and sales pitches into a quiet folder—so your inbox stays focused.</p>
 
                             <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
-                                <Button size="lg" onClick={() => navigate('/connect')}>
-                                    <span>Connect Gmail</span>
+                                <Button size="lg" onClick={handleGoogleSignIn} disabled={isLoading}>
+                                    {isLoading ? (
+                                        <>
+                                            <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                                            Connecting...
+                                        </>
+                                    ) : (
+                                        <span>Sign in with Google</span>
+                                    )}
                                 </Button>
                                 <Button variant="outline" size="lg" onClick={() => {
                                     const pricingSection = document.getElementById('pricing');

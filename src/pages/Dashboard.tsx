@@ -5,7 +5,10 @@
 // POST /api/gmail/label/restore { gmail_msg_id }
 
 import { useState, useEffect, useMemo } from 'react';
-import { Settings, User } from 'lucide-react';
+import { Settings, User, LogOut } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
+import { supabase } from '../lib/supabase';
+import { useNavigate } from 'react-router-dom';
 import { useStrictness } from '../hooks/useStrictness';
 import { KpiCards } from '../components/dashboard/KpiCards';
 import { StrictnessSelector } from '../components/dashboard/StrictnessSelector';
@@ -48,6 +51,8 @@ const MOCK_BLOCKED_EMAILS: BlockedEmail[] = [
 ];
 
 export function Dashboard() {
+  const navigate = useNavigate();
+  const { user } = useAuth();
   const {
     strictness,
     setStrictness,
@@ -106,6 +111,11 @@ export function Dashboard() {
     setShowToast(true);
   };
 
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    navigate('/');
+  };
+
   return (
     <div className="min-h-screen bg-zinc-950">
       <nav className="border-b border-zinc-800 bg-zinc-900/50 backdrop-blur-sm">
@@ -113,21 +123,20 @@ export function Dashboard() {
           <div className="flex items-center justify-between">
             <h1 className="text-xl font-semibold text-white">Inbox Defender</h1>
             <div className="flex items-center gap-3">
-              <button
-                disabled
-                className="px-4 py-2 text-sm text-zinc-500 border border-zinc-800 rounded-lg cursor-not-allowed"
-              >
-                Connect Gmail
-              </button>
+              <span className="text-sm text-zinc-400">{user?.email}</span>
               <button
                 onClick={() => setIsSettingsOpen(true)}
                 className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
               >
                 <Settings className="w-5 h-5" />
               </button>
-              <div className="w-8 h-8 bg-zinc-800 rounded-lg flex items-center justify-center">
-                <User className="w-4 h-4 text-zinc-400" />
-              </div>
+              <button
+                onClick={handleSignOut}
+                className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
+                title="Sign out"
+              >
+                <LogOut className="w-5 h-5" />
+              </button>
             </div>
           </div>
         </div>
