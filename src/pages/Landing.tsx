@@ -205,7 +205,7 @@ export function Landing() {
               </ul>
 
               <Button variant="outline" className="w-full" onClick={() => navigate('/connect')}>
-                Start Personal
+                Pricing
               </Button>
             </motion.div>
 
