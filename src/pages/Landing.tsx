@@ -256,66 +256,6 @@ export function Landing() {
         initial="hidden"
         whileInView="visible"
         viewport={{ once: true, margin: "-100px" }}
-        className="py-24 bg-black relative z-10"
-      >
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-16">
-            <motion.p variants={itemVariants} className="text-gray-400 mb-8 text-lg">Trusted by teams at</motion.p>
-            <motion.div
-              variants={itemVariants}
-              className="flex flex-wrap justify-center items-center gap-8 opacity-40 invert"
-            >
-              <img
-                className="h-5 w-fit"
-                src="https://html.tailus.io/blocks/customers/nvidia.svg"
-                alt="Nvidia Logo"
-                height="20"
-                width="auto"
-              />
-              <img
-                className="h-4 w-fit"
-                src="https://html.tailus.io/blocks/customers/column.svg"
-                alt="Column Logo"
-                height="16"
-                width="auto"
-              />
-              <img
-                className="h-4 w-fit"
-                src="https://html.tailus.io/blocks/customers/github.svg"
-                alt="GitHub Logo"
-                height="16"
-                width="auto"
-              />
-              <img
-                className="h-5 w-fit"
-                src="https://html.tailus.io/blocks/customers/nike.svg"
-                alt="Nike Logo"
-                height="20"
-                width="auto"
-              />
-            </motion.div>
-          </div>
-
-          <motion.div variants={itemVariants} className="max-w-4xl mx-auto text-center">
-            <blockquote className="text-xl md:text-2xl text-gray-300 mb-8 leading-relaxed">
-              "Inbox Defender gave me my mornings back. I used to spend 20 minutes sorting through cold outreach—now my inbox only shows what matters."
-            </blockquote>
-            <div className="flex items-center justify-center gap-4">
-              <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-blue-700 rounded-full"></div>
-              <div className="text-left">
-                <p className="font-semibold text-white text-lg">Sarah Chen</p>
-                <p className="text-gray-400">VP Marketing, TechCorp</p>
-              </div>
-            </div>
-          </motion.div>
-        </div>
-      </motion.section>
-
-      <motion.section
-        variants={containerVariants}
-        initial="hidden"
-        whileInView="visible"
-        viewport={{ once: true, margin: "-100px" }}
         className="py-20 bg-black relative z-10"
       >
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
