@@ -106,7 +106,7 @@ export const HeroSection = () => {
                                     const pricingSection = document.getElementById('pricing');
                                     pricingSection?.scrollIntoView({ behavior: 'smooth' });
                                 }}>
-                                    <span>See Business plan</span>
+                                    <span>Pricing</span>
                                 </Button>
                             </div>
                         </div>
