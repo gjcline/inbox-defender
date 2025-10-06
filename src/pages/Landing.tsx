@@ -263,7 +263,7 @@ export function Landing() {
             <Button
               size="lg"
               variant="outline"
-              className="border-zinc-700 !text-white hover:bg-zinc-900/50 hover:!text-white px-8 py-6"
+              className="bg-white border-zinc-300 text-zinc-900 hover:bg-zinc-50 px-8 py-6"
               onClick={() => window.open('https://cal.com/bliztic/email', '_blank')}
             >
               Book a call
