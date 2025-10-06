@@ -15,6 +15,9 @@ import {
   Clock,
   BarChart3,
   ChevronDown,
+  Eye,
+  Navigation,
+  Ban,
 } from 'lucide-react';
 
 export function Landing() {
@@ -165,51 +168,87 @@ export function Landing() {
         viewport={{ once: true, margin: "-100px" }}
         className="py-24 bg-black relative z-10"
       >
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <motion.h2
-            variants={itemVariants}
-            className="text-4xl md:text-5xl font-semibold text-center text-white mb-20"
-          >
-            How it works
-          </motion.h2>
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+          <motion.div variants={itemVariants} className="text-center mb-16">
+            <h2 className="text-4xl md:text-5xl font-semibold text-white mb-4">
+              Why it works
+            </h2>
+            <p className="text-xl text-gray-400 max-w-2xl mx-auto">
+              Inbox Defender doesn't just hide noise—it reduces it.
+            </p>
+          </motion.div>
 
-          <div className="grid lg:grid-cols-3 gap-12">
-            <motion.div variants={itemVariants} className="text-center group">
-              <div className="w-20 h-20 bg-blue-900/30 rounded-full flex items-center justify-center mx-auto mb-8 group-hover:bg-blue-900/50 transition-colors duration-300">
-                <Mail className="w-10 h-10 text-blue-400" />
+          <div className="space-y-8 mb-12">
+            <motion.div variants={itemVariants} className="flex items-start gap-6 group">
+              <div className="w-14 h-14 bg-blue-900/30 rounded-2xl flex items-center justify-center flex-shrink-0 group-hover:bg-blue-900/50 transition-colors duration-300">
+                <Eye className="w-7 h-7 text-blue-400" />
               </div>
-              <h3 className="text-2xl font-semibold text-white mb-6">
-                1. Connect your Gmail
-              </h3>
-              <p className="text-gray-400 leading-relaxed text-lg">
-                Secure OAuth connection in seconds. No passwords, no risk.
-              </p>
+              <div className="flex-1">
+                <h3 className="text-xl font-semibold text-white mb-2">
+                  Detect
+                </h3>
+                <p className="text-gray-400 leading-relaxed">
+                  Recognizes cold outreach and sales sequences the moment they arrive.
+                </p>
+              </div>
             </motion.div>
 
-            <motion.div variants={itemVariants} className="text-center group">
-              <div className="w-20 h-20 bg-orange-900/30 rounded-full flex items-center justify-center mx-auto mb-8 group-hover:bg-orange-900/50 transition-colors duration-300">
-                <Zap className="w-10 h-10 text-orange-400" />
+            <motion.div variants={itemVariants} className="flex items-start gap-6 group">
+              <div className="w-14 h-14 bg-orange-900/30 rounded-2xl flex items-center justify-center flex-shrink-0 group-hover:bg-orange-900/50 transition-colors duration-300">
+                <Navigation className="w-7 h-7 text-orange-400" />
               </div>
-              <h3 className="text-2xl font-semibold text-white mb-6">
-                2. Our AI flags outreach emails in real-time
-              </h3>
-              <p className="text-gray-400 leading-relaxed text-lg">
-                Advanced machine learning identifies cold outreach and sales pitches.
-              </p>
+              <div className="flex-1">
+                <h3 className="text-xl font-semibold text-white mb-2">
+                  Deflect
+                </h3>
+                <p className="text-gray-400 leading-relaxed">
+                  Routes them to a quiet folder so your main inbox stays focused (undo anytime).
+                </p>
+              </div>
             </motion.div>
 
-            <motion.div variants={itemVariants} className="text-center group">
-              <div className="w-20 h-20 bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-8 group-hover:bg-green-900/50 transition-colors duration-300">
-                <Shield className="w-10 h-10 text-green-400" />
+            <motion.div variants={itemVariants} className="flex items-start gap-6 group">
+              <div className="w-14 h-14 bg-green-900/30 rounded-2xl flex items-center justify-center flex-shrink-0 group-hover:bg-green-900/50 transition-colors duration-300">
+                <Ban className="w-7 h-7 text-green-400" />
               </div>
-              <h3 className="text-2xl font-semibold text-white mb-6">
-                3. We move them to the "Outreach (AI)" folder
-              </h3>
-              <p className="text-gray-400 leading-relaxed text-lg">
-                Clean inbox, organized outreach. Undo anytime with one click.
-              </p>
+              <div className="flex-1">
+                <h3 className="text-xl font-semibold text-white mb-2">
+                  Deter
+                </h3>
+                <p className="text-gray-400 leading-relaxed">
+                  Sends intelligent opt-out signals so repeat senders slow down over time.
+                </p>
+              </div>
             </motion.div>
           </div>
+
+          <motion.div variants={itemVariants} className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-6">
+            <Button
+              size="lg"
+              onClick={handleGoogleSignIn}
+              disabled={isLoading}
+              className="bg-gradient-to-t from-blue-500 to-blue-600 shadow-lg shadow-blue-800 border border-blue-500 text-white px-8 py-6 w-full sm:w-auto"
+            >
+              {isLoading ? (
+                <><Loader2 className="w-5 h-5 mr-2 animate-spin" />Connecting...</>
+              ) : (
+                'Start free trial'
+              )}
+            </Button>
+            <Button
+              size="lg"
+              onClick={handleGoogleSignIn}
+              disabled={isLoading}
+              variant="outline"
+              className="border-zinc-700 text-white hover:bg-zinc-900/50 px-8 py-6 w-full sm:w-auto"
+            >
+              Try with 1-click: Gmail
+            </Button>
+          </motion.div>
+
+          <motion.p variants={itemVariants} className="text-center text-sm text-zinc-500">
+            Secure Google OAuth • No password sharing • You stay in control
+          </motion.p>
         </div>
       </motion.section>
 
