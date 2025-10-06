@@ -16,6 +16,8 @@ import { WeeklyChart } from '../components/dashboard/WeeklyChart';
 import { BlockedTable, BlockedEmail } from '../components/dashboard/BlockedTable';
 import { SettingsDrawer } from '../components/dashboard/SettingsDrawer';
 import { Toast } from '../components/dashboard/Toast';
+import { GmailConnect } from '../components/dashboard/GmailConnect';
+import { MakeWebhookConfig } from '../components/dashboard/MakeWebhookConfig';
 
 const BASE_WEEKLY_DATA = [
   { day: 'Mon', count: 42 },
@@ -68,11 +70,51 @@ export function Dashboard() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [showToast, setShowToast] = useState(false);
+  const [realEmails, setRealEmails] = useState<BlockedEmail[]>([]);
+  const [hasRealData, setHasRealData] = useState(false);
 
   useEffect(() => {
-    const timer = setTimeout(() => setLoading(false), 600);
-    return () => clearTimeout(timer);
-  }, []);
+    if (user) {
+      fetchEmails();
+      const interval = setInterval(() => {
+        fetchEmails();
+      }, 30000);
+      return () => clearInterval(interval);
+    } else {
+      const timer = setTimeout(() => setLoading(false), 600);
+      return () => clearTimeout(timer);
+    }
+  }, [user]);
+
+  const fetchEmails = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('emails')
+        .select('id, sender_email, subject, ai_confidence_score, received_at')
+        .eq('user_id', user?.id)
+        .eq('classification', 'blocked')
+        .order('received_at', { ascending: false })
+        .limit(50);
+
+      if (error) throw error;
+
+      if (data && data.length > 0) {
+        const mappedEmails: BlockedEmail[] = data.map((email) => ({
+          id: email.id,
+          sender: email.sender_email,
+          subject: email.subject,
+          score: email.ai_confidence_score || 0.75,
+          dateISO: email.received_at,
+        }));
+        setRealEmails(mappedEmails);
+        setHasRealData(true);
+      }
+    } catch (err) {
+      console.error('Error fetching emails:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const weeklyData = useMemo(() => {
     return BASE_WEEKLY_DATA.map(({ day, count }) => ({
@@ -81,9 +123,11 @@ export function Dashboard() {
     }));
   }, [multiplier]);
 
+  const emailsToDisplay = hasRealData ? realEmails : MOCK_BLOCKED_EMAILS;
+
   const filteredEmails = useMemo(() => {
-    return MOCK_BLOCKED_EMAILS.filter(email => email.score >= scoreThreshold);
-  }, [scoreThreshold]);
+    return emailsToDisplay.filter(email => email.score >= scoreThreshold);
+  }, [emailsToDisplay, scoreThreshold]);
 
   const blockedThisWeek = useMemo(() => {
     return weeklyData.reduce((sum, day) => sum + day.count, 0);
@@ -143,6 +187,9 @@ export function Dashboard() {
       </nav>
 
       <main className="max-w-7xl mx-auto px-6 py-8 space-y-8">
+        {user && <GmailConnect userId={user.id} />}
+        {user && <MakeWebhookConfig userId={user.id} />}
+
         <KpiCards
           blockedThisWeek={blockedThisWeek}
           blockedToday={blockedToday}
