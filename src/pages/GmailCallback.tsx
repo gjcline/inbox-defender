@@ -16,20 +16,32 @@ export function GmailCallback() {
     const state = searchParams.get('state');
     const errorParam = searchParams.get('error');
 
+    console.log('🔍 Gmail Callback Debug:');
+    console.log('Code:', code ? 'Present' : 'Missing');
+    console.log('State (userId):', state);
+    console.log('Error param:', errorParam);
+
     if (errorParam) {
+      console.error('❌ OAuth error from Google:', errorParam);
       setError('Authorization was denied or cancelled');
       setTimeout(() => navigate('/dashboard'), 3000);
       return;
     }
 
     if (!code || !state) {
+      console.error('❌ Missing required parameters');
       setError('Missing authorization code or state');
       setTimeout(() => navigate('/dashboard'), 3000);
       return;
     }
 
     try {
+      const redirectUri = `${window.location.origin}/auth/gmail/callback`;
       const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/gmail-oauth-callback`;
+
+      console.log('📡 Calling Edge Function:', apiUrl);
+      console.log('Redirect URI:', redirectUri);
+
       const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {
@@ -39,18 +51,22 @@ export function GmailCallback() {
         body: JSON.stringify({
           code,
           userId: state,
-          redirectUri: `${window.location.origin}/auth/gmail/callback`,
+          redirectUri,
         }),
       });
 
+      console.log('Response status:', response.status);
+      const responseData = await response.json();
+      console.log('Response data:', responseData);
+
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to connect Gmail');
+        throw new Error(responseData.error || 'Failed to connect Gmail');
       }
 
+      console.log('✅ Gmail connected successfully!');
       navigate('/dashboard');
     } catch (err) {
-      console.error('Gmail OAuth error:', err);
+      console.error('❌ Gmail OAuth error:', err);
       setError(err instanceof Error ? err.message : 'Failed to connect Gmail');
       setTimeout(() => navigate('/dashboard'), 3000);
     }

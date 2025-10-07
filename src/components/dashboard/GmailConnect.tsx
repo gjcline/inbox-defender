@@ -36,6 +36,12 @@ export function GmailConnect({ userId }: GmailConnectProps) {
     const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
     const redirectUri = `${window.location.origin}/auth/gmail/callback`;
 
+    console.log('🔍 Gmail OAuth Debug Info:');
+    console.log('Client ID:', clientId);
+    console.log('Redirect URI:', redirectUri);
+    console.log('⚠️  Make sure this EXACT redirect URI is added in Google Cloud Console:');
+    console.log(`   ${redirectUri}`);
+
     const scopes = [
       'https://www.googleapis.com/auth/gmail.modify',
       'https://www.googleapis.com/auth/userinfo.email',
