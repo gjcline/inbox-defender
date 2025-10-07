@@ -27,27 +27,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
-  console.log('🔐 AuthProvider rendered. Loading:', loading, 'User:', user?.email);
-
   useEffect(() => {
-    console.log('🔄 AuthProvider useEffect running...');
-    const timeout = setTimeout(() => {
-      console.warn('Auth loading timeout - forcing loading to false');
-      setLoading(false);
-    }, 5000);
-
-    supabase.auth.getSession().then(({ data: { session }, error }) => {
-      if (error) {
-        console.error('Error getting session:', error);
-      }
+    supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
-      clearTimeout(timeout);
-    }).catch((err) => {
-      console.error('Fatal error getting session:', err);
-      setLoading(false);
-      clearTimeout(timeout);
     });
 
     const {
@@ -60,10 +44,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       })();
     });
 
-    return () => {
-      clearTimeout(timeout);
-      subscription.unsubscribe();
-    };
+    return () => subscription.unsubscribe();
   }, []);
 
   return (
