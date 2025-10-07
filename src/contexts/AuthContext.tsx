@@ -27,7 +27,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
+  console.log('🔐 AuthProvider rendered. Loading:', loading, 'User:', user?.email);
+
   useEffect(() => {
+    console.log('🔄 AuthProvider useEffect running...');
     const timeout = setTimeout(() => {
       console.warn('Auth loading timeout - forcing loading to false');
       setLoading(false);
