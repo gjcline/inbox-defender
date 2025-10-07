@@ -7,8 +7,6 @@ import { AuthProvider } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 
 function App() {
-  console.log('📱 App component rendering...');
-
   return (
     <AuthProvider>
       <Routes>
