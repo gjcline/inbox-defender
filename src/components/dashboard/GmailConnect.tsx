@@ -32,15 +32,22 @@ export function GmailConnect({ userId }: GmailConnectProps) {
     }
   };
 
-  const handleConnect = () => {
+  const handleConnect = async () => {
     const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
     const redirectUri = `${window.location.origin}/auth/gmail/callback`;
 
     console.log('🔍 Gmail OAuth Debug Info:');
     console.log('Client ID:', clientId);
     console.log('Redirect URI:', redirectUri);
+    console.log('User ID:', userId);
     console.log('⚠️  Make sure this EXACT redirect URI is added in Google Cloud Console:');
     console.log(`   ${redirectUri}`);
+
+    if (!clientId || clientId === 'undefined') {
+      console.error('❌ VITE_GOOGLE_CLIENT_ID is not set!');
+      setError('Google Client ID not configured. Please check your environment variables.');
+      return;
+    }
 
     const scopes = [
       'https://www.googleapis.com/auth/gmail.modify',
@@ -55,6 +62,9 @@ export function GmailConnect({ userId }: GmailConnectProps) {
     authUrl.searchParams.append('access_type', 'offline');
     authUrl.searchParams.append('prompt', 'consent');
     authUrl.searchParams.append('state', userId);
+
+    console.log('🚀 Redirecting to Google OAuth...');
+    console.log('Full URL:', authUrl.toString());
 
     window.location.href = authUrl.toString();
   };
