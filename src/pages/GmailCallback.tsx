@@ -41,6 +41,8 @@ export function GmailCallback() {
 
       console.log('📡 Calling Edge Function:', apiUrl);
       console.log('Redirect URI:', redirectUri);
+      console.log('Supabase URL:', import.meta.env.VITE_SUPABASE_URL);
+      console.log('Has Anon Key:', !!import.meta.env.VITE_SUPABASE_ANON_KEY);
 
       const response = await fetch(apiUrl, {
         method: 'POST',
@@ -56,19 +58,45 @@ export function GmailCallback() {
       });
 
       console.log('Response status:', response.status);
-      const responseData = await response.json();
+      console.log('Response headers:', Object.fromEntries(response.headers.entries()));
+
+      let responseData;
+      const contentType = response.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        responseData = await response.json();
+      } else {
+        const textData = await response.text();
+        console.log('Non-JSON response:', textData);
+        throw new Error(`Edge function returned non-JSON response (${response.status}): ${textData.substring(0, 100)}`);
+      }
+
       console.log('Response data:', responseData);
 
       if (!response.ok) {
-        throw new Error(responseData.error || 'Failed to connect Gmail');
+        const errorMsg = responseData.error || `HTTP ${response.status}: Failed to connect Gmail`;
+        throw new Error(errorMsg);
       }
 
       console.log('✅ Gmail connected successfully!');
       navigate('/dashboard');
     } catch (err) {
       console.error('❌ Gmail OAuth error:', err);
-      setError(err instanceof Error ? err.message : 'Failed to connect Gmail');
-      setTimeout(() => navigate('/dashboard'), 3000);
+      let errorMessage = 'Failed to connect Gmail';
+
+      if (err instanceof Error) {
+        errorMessage = err.message;
+
+        if (err.message.includes('Failed to fetch')) {
+          errorMessage = 'Cannot reach edge function. Please ensure the gmail-oauth-callback function is deployed in Supabase.';
+        } else if (err.message.includes('404')) {
+          errorMessage = 'Edge function not found. Please deploy gmail-oauth-callback to Supabase.';
+        } else if (err.message.includes('500')) {
+          errorMessage = 'Edge function error. Check Supabase function logs for details.';
+        }
+      }
+
+      setError(errorMessage);
+      setTimeout(() => navigate('/dashboard'), 5000);
     }
   };
 
