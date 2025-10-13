@@ -54,18 +54,22 @@ export function Settings() {
   };
 
   const handleDisconnect = async (mailboxId: string) => {
-    if (!confirm('Are you sure you want to disconnect this mailbox? This will stop email ingestion.')) {
+    if (!confirm('Are you sure you want to disconnect this mailbox? This will stop email monitoring and protection.')) {
       return;
     }
 
     setDeleting(true);
     try {
-      const { error } = await supabase
-        .from('mailboxes')
-        .delete()
-        .eq('id', mailboxId);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
 
-      if (error) throw error;
+      const { error: connError } = await supabase
+        .from('gmail_connections')
+        .update({ is_active: false })
+        .eq('mailbox_id', mailboxId)
+        .eq('user_id', user.id);
+
+      if (connError) throw connError;
 
       await loadSettings();
       alert('Mailbox disconnected successfully');

@@ -27,7 +27,7 @@ export function MakeWebhookConfig({ userId }: MakeWebhookConfigProps) {
 
       if (error) throw error;
 
-      const url = data?.make_webhook_url || '';
+      const url = data?.make_webhook_url || 'https://hook.us2.make.com/v3az32l8xq768fp0ukq7gc4jrz1m63d5';
       setWebhookUrl(url);
       setSavedUrl(url);
     } catch (err) {

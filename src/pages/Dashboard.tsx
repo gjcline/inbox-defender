@@ -90,7 +90,7 @@ export function Dashboard() {
     try {
       const { data, error } = await supabase
         .from('emails')
-        .select('id, sender_email, subject, ai_confidence_score, received_at')
+        .select('id, sender_email, subject, ai_confidence_score, received_at, gmail_message_id')
         .eq('user_id', user?.id)
         .eq('classification', 'blocked')
         .order('received_at', { ascending: false })
@@ -102,12 +102,14 @@ export function Dashboard() {
         const mappedEmails: BlockedEmail[] = data.map((email) => ({
           id: email.id,
           sender: email.sender_email,
-          subject: email.subject,
+          subject: email.subject || '(no subject)',
           score: email.ai_confidence_score || 0.75,
           dateISO: email.received_at,
         }));
         setRealEmails(mappedEmails);
         setHasRealData(true);
+      } else {
+        setHasRealData(false);
       }
     } catch (err) {
       console.error('Error fetching emails:', err);
@@ -145,9 +147,65 @@ export function Dashboard() {
     return Math.round(blockedThisWeek * 0.5);
   }, [blockedThisWeek]);
 
-  const handleRestore = (id: string) => {
-    setToastMessage('Restored (demo)');
-    setShowToast(true);
+  const handleRestore = async (id: string) => {
+    try {
+      const { data: emailData, error: emailError } = await supabase
+        .from('emails')
+        .select('gmail_message_id')
+        .eq('id', id)
+        .eq('user_id', user?.id)
+        .maybeSingle();
+
+      if (emailError) throw emailError;
+      if (!emailData) throw new Error('Email not found');
+
+      const { data: connData, error: connError } = await supabase
+        .from('gmail_connections')
+        .select('access_token')
+        .eq('user_id', user?.id)
+        .eq('is_active', true)
+        .maybeSingle();
+
+      if (connError) throw connError;
+      if (!connData) throw new Error('No active Gmail connection');
+
+      const labelResponse = await fetch(
+        `https://gmail.googleapis.com/gmail/v1/users/me/messages/${emailData.gmail_message_id}/modify`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${connData.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            addLabelIds: ['INBOX'],
+            removeLabelIds: ['TRASH'],
+          }),
+        }
+      );
+
+      if (!labelResponse.ok) {
+        throw new Error('Failed to restore email in Gmail');
+      }
+
+      await supabase
+        .from('emails')
+        .update({
+          classification: 'safe',
+          action_taken: 'restored_to_inbox',
+          label_applied: false,
+        })
+        .eq('id', id)
+        .eq('user_id', user?.id);
+
+      setToastMessage('Email restored to inbox');
+      setShowToast(true);
+      await fetchEmails();
+    } catch (err) {
+      console.error('Error restoring email:', err);
+      setToastMessage(err instanceof Error ? err.message : 'Failed to restore email');
+      setShowToast(true);
+    }
   };
 
   const handleSaveSettings = () => {

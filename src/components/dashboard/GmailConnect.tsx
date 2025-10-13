@@ -1,15 +1,27 @@
 import { useState, useEffect } from 'react';
-import { Mail, CheckCircle, AlertCircle } from 'lucide-react';
+import { Mail, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 interface GmailConnectProps {
   userId: string;
 }
 
+interface ConnectionData {
+  isConnected: boolean;
+  emailAddress: string;
+  lastSyncAt: string | null;
+}
+
 export function GmailConnect({ userId }: GmailConnectProps) {
-  const [isConnected, setIsConnected] = useState(false);
+  const [connectionData, setConnectionData] = useState<ConnectionData>({
+    isConnected: false,
+    emailAddress: '',
+    lastSyncAt: null,
+  });
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState('');
+  const [syncMessage, setSyncMessage] = useState('');
 
   useEffect(() => {
     checkConnection();
@@ -17,18 +29,77 @@ export function GmailConnect({ userId }: GmailConnectProps) {
 
   const checkConnection = async () => {
     try {
-      const { data, error } = await supabase
+      const { data: connectionData, error: connError } = await supabase
         .from('gmail_connections')
-        .select('is_active')
+        .select('is_active, mailbox_id, last_sync_at')
         .eq('user_id', userId)
         .maybeSingle();
 
-      if (error) throw error;
-      setIsConnected(data?.is_active || false);
+      if (connError) throw connError;
+
+      if (connectionData?.is_active && connectionData.mailbox_id) {
+        const { data: mailboxData, error: mailboxError } = await supabase
+          .from('mailboxes')
+          .select('email_address')
+          .eq('id', connectionData.mailbox_id)
+          .maybeSingle();
+
+        if (mailboxError) throw mailboxError;
+
+        setConnectionData({
+          isConnected: true,
+          emailAddress: mailboxData?.email_address || '',
+          lastSyncAt: connectionData.last_sync_at,
+        });
+      } else {
+        setConnectionData({
+          isConnected: false,
+          emailAddress: '',
+          lastSyncAt: null,
+        });
+      }
     } catch (err) {
       console.error('Error checking Gmail connection:', err);
+      setConnectionData({
+        isConnected: false,
+        emailAddress: '',
+        lastSyncAt: null,
+      });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSyncNow = async () => {
+    setSyncing(true);
+    setSyncMessage('');
+    setError('');
+
+    try {
+      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/gmail-sync-cron`;
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({}),
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        const totalEmails = result.results?.reduce((sum: number, r: any) => sum + (r.new_emails || 0), 0) || 0;
+        setSyncMessage(`Successfully synced ${totalEmails} new email${totalEmails !== 1 ? 's' : ''}`);
+        await checkConnection();
+      } else {
+        throw new Error(result.error || 'Sync failed');
+      }
+    } catch (err) {
+      console.error('Error syncing emails:', err);
+      setError(err instanceof Error ? err.message : 'Failed to sync emails');
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -83,16 +154,46 @@ export function GmailConnect({ userId }: GmailConnectProps) {
     );
   }
 
-  if (isConnected) {
+  if (connectionData.isConnected) {
+    const lastSyncText = connectionData.lastSyncAt
+      ? new Date(connectionData.lastSyncAt).toLocaleString()
+      : 'Never';
+
     return (
       <div className="bg-emerald-950/20 border border-emerald-900/50 rounded-2xl p-6">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center justify-center w-10 h-10 bg-emerald-900/30 rounded-lg">
+        <div className="flex items-start gap-3">
+          <div className="flex items-center justify-center w-10 h-10 bg-emerald-900/30 rounded-lg flex-shrink-0">
             <CheckCircle className="w-5 h-5 text-emerald-400" />
           </div>
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <h3 className="text-base font-semibold text-white">Gmail Connected</h3>
-            <p className="text-sm text-zinc-400">Your inbox is being monitored and protected</p>
+            <p className="text-sm text-zinc-400 mb-1">
+              {connectionData.emailAddress} is being monitored and protected
+            </p>
+            <p className="text-xs text-zinc-500">Last sync: {lastSyncText}</p>
+
+            {syncMessage && (
+              <div className="flex items-center gap-2 mt-3 text-sm text-emerald-400">
+                <CheckCircle className="w-4 h-4" />
+                <span>{syncMessage}</span>
+              </div>
+            )}
+
+            {error && (
+              <div className="flex items-center gap-2 mt-3 text-sm text-red-400">
+                <AlertCircle className="w-4 h-4" />
+                <span>{error}</span>
+              </div>
+            )}
+
+            <button
+              onClick={handleSyncNow}
+              disabled={syncing}
+              className="mt-4 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-zinc-700 disabled:cursor-not-allowed text-white rounded-lg transition-colors text-sm font-medium flex items-center gap-2"
+            >
+              <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
+              {syncing ? 'Syncing...' : 'Sync Now'}
+            </button>
           </div>
         </div>
       </div>
