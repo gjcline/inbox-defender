@@ -6,6 +6,7 @@ import { Loader2 } from 'lucide-react';
 import { Sparkles as SparklesComp } from '../components/ui/sparkles';
 import { Button } from '../components/ui/button';
 import PricingSection4 from '../components/ui/pricing-section-4';
+import { WhyItWorks } from '../components/ui/WhyItWorks';
 import {
   Mail,
   Shield,
@@ -160,68 +161,16 @@ export function Landing() {
         </div>
       </motion.section>
 
-      <motion.section
-        id="features"
-        variants={containerVariants}
-        initial="hidden"
-        whileInView="visible"
-        viewport={{ once: true, margin: "-100px" }}
-        className="py-24 bg-black relative z-10"
-      >
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-          <motion.div variants={itemVariants} className="text-center mb-16">
-            <h2 className="text-4xl md:text-5xl font-semibold text-white mb-4">
-              Why it works
-            </h2>
-            <p className="text-xl text-gray-400 max-w-2xl mx-auto">
-              Inbox Defender doesn't just hide noise—it reduces it.
-            </p>
-          </motion.div>
+      <section id="features" className="py-24 bg-black relative z-10">
+        <WhyItWorks className="mb-16" accentColor="rgb(59, 130, 246)" />
 
-          <div className="space-y-8 mb-12">
-            <motion.div variants={itemVariants} className="flex items-start gap-6 group">
-              <div className="w-14 h-14 bg-blue-900/30 rounded-2xl flex items-center justify-center flex-shrink-0 group-hover:bg-blue-900/50 transition-colors duration-300">
-                <Eye className="w-7 h-7 text-blue-400" />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-xl font-semibold text-white mb-2">
-                  Detect
-                </h3>
-                <p className="text-gray-400 leading-relaxed">
-                  Recognizes cold outreach and sales sequences the moment they arrive.
-                </p>
-              </div>
-            </motion.div>
-
-            <motion.div variants={itemVariants} className="flex items-start gap-6 group">
-              <div className="w-14 h-14 bg-orange-900/30 rounded-2xl flex items-center justify-center flex-shrink-0 group-hover:bg-orange-900/50 transition-colors duration-300">
-                <Navigation className="w-7 h-7 text-orange-400" />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-xl font-semibold text-white mb-2">
-                  Deflect
-                </h3>
-                <p className="text-gray-400 leading-relaxed">
-                  Routes them to a quiet folder so your main inbox stays focused (undo anytime).
-                </p>
-              </div>
-            </motion.div>
-
-            <motion.div variants={itemVariants} className="flex items-start gap-6 group">
-              <div className="w-14 h-14 bg-green-900/30 rounded-2xl flex items-center justify-center flex-shrink-0 group-hover:bg-green-900/50 transition-colors duration-300">
-                <Ban className="w-7 h-7 text-green-400" />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-xl font-semibold text-white mb-2">
-                  Deter
-                </h3>
-                <p className="text-gray-400 leading-relaxed">
-                  Sends intelligent opt-out signals so repeat senders slow down over time.
-                </p>
-              </div>
-            </motion.div>
-          </div>
-
+        <motion.div
+          variants={containerVariants}
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, margin: "-100px" }}
+          className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8"
+        >
           <motion.div variants={itemVariants} className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-6">
             <Button
               size="lg"
@@ -273,8 +222,8 @@ export function Landing() {
           <motion.p variants={itemVariants} className="text-center text-sm text-zinc-500">
             Secure Google OAuth • No password sharing • You stay in control
           </motion.p>
-        </div>
-      </motion.section>
+        </motion.div>
+      </section>
 
       <motion.section
         variants={containerVariants}
