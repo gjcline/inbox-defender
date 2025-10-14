@@ -8,6 +8,7 @@ import { Button } from '../components/ui/button';
 import PricingSection4 from '../components/ui/pricing-section-4';
 import { WhyItWorks } from '../components/ui/WhyItWorks';
 import { BenefitsSection } from '../components/ui/BenefitsSection';
+import { SplashCursor } from '../components/ui/splash-cursor';
 import {
   Mail,
   Shield,
@@ -97,6 +98,7 @@ export function Landing() {
 
   return (
     <div className="min-h-screen bg-black relative overflow-hidden">
+      <SplashCursor />
       <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff2c_1px,transparent_1px),linear-gradient(to_bottom,#3a3a3a01_1px,transparent_1px)] bg-[size:70px_80px]" />
       <SparklesComp
         density={800}
