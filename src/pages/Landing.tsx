@@ -100,13 +100,13 @@ export function Landing() {
     <>
       <SplashCursor />
       <div className="min-h-screen bg-black relative">
-        <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff2c_1px,transparent_1px),linear-gradient(to_bottom,#3a3a3a01_1px,transparent_1px)] bg-[size:70px_80px] z-10" />
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff2c_1px,transparent_1px),linear-gradient(to_bottom,#3a3a3a01_1px,transparent_1px)] bg-[size:70px_80px] z-10 pointer-events-none" />
       <SparklesComp
         density={800}
         direction="top"
         speed={0.5}
         color="#FFFFFF"
-        className="absolute inset-0 h-full w-full [mask-image:radial-gradient(50%_50%,white,transparent_85%)] z-20"
+        className="absolute inset-0 h-full w-full [mask-image:radial-gradient(50%_50%,white,transparent_85%)] z-20 pointer-events-none"
       />
 
       <nav className="relative z-50 border-b border-neutral-800 bg-black/50 backdrop-blur-sm">
@@ -172,7 +172,7 @@ export function Landing() {
         </div>
       </motion.section>
 
-      <section id="features" className="py-24 bg-black relative z-10">
+      <section id="features" className="py-24 relative z-10">
         <WhyItWorks className="mb-16" accentColor="rgb(59, 130, 246)" />
 
         <motion.div
@@ -236,7 +236,7 @@ export function Landing() {
         </motion.div>
       </section>
 
-      <section className="py-24 bg-black relative z-10">
+      <section className="py-24 relative z-10">
         <BenefitsSection accentColor="rgb(59, 130, 246)" />
       </section>
 
@@ -247,7 +247,7 @@ export function Landing() {
         initial="hidden"
         whileInView="visible"
         viewport={{ once: true, margin: "-100px" }}
-        className="py-20 bg-black relative z-10"
+        className="py-20 relative z-10"
       >
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <motion.div
@@ -268,7 +268,7 @@ export function Landing() {
         initial="hidden"
         whileInView="visible"
         viewport={{ once: true, margin: "-100px" }}
-        className="py-24 bg-black relative z-10"
+        className="py-24 relative z-10"
       >
         <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
           <motion.h2
@@ -323,7 +323,7 @@ export function Landing() {
         initial="hidden"
         whileInView="visible"
         viewport={{ once: true, margin: "-100px" }}
-        className="bg-black border-t border-neutral-800 py-20 relative z-10"
+        className="border-t border-neutral-800 py-20 relative z-10"
         id="support"
       >
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
