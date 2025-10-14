@@ -7,6 +7,7 @@ import { Sparkles as SparklesComp } from '../components/ui/sparkles';
 import { Button } from '../components/ui/button';
 import PricingSection4 from '../components/ui/pricing-section-4';
 import { WhyItWorks } from '../components/ui/WhyItWorks';
+import { BenefitsSection } from '../components/ui/BenefitsSection';
 import {
   Mail,
   Shield,
@@ -225,41 +226,9 @@ export function Landing() {
         </motion.div>
       </section>
 
-      <motion.section
-        variants={containerVariants}
-        initial="hidden"
-        whileInView="visible"
-        viewport={{ once: true, margin: "-100px" }}
-        className="py-24 bg-black relative z-10"
-      >
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid md:grid-cols-3 gap-12">
-            <motion.div variants={itemVariants} className="text-center group">
-              <div className="w-16 h-16 bg-orange-900/30 rounded-full flex items-center justify-center mx-auto mb-6 group-hover:bg-orange-900/50 transition-colors duration-300">
-                <Clock className="w-8 h-8 text-orange-400" />
-              </div>
-              <h3 className="font-semibold text-white mb-3 text-xl">Save time</h3>
-              <p className="text-gray-400 text-lg">Less noise, more signal</p>
-            </motion.div>
-
-            <motion.div variants={itemVariants} className="text-center group">
-              <div className="w-16 h-16 bg-blue-900/30 rounded-full flex items-center justify-center mx-auto mb-6 group-hover:bg-blue-900/50 transition-colors duration-300">
-                <Shield className="w-8 h-8 text-blue-400" />
-              </div>
-              <h3 className="font-semibold text-white mb-3 text-xl">Safer defaults</h3>
-              <p className="text-gray-400 text-lg">Allowlist your contacts</p>
-            </motion.div>
-
-            <motion.div variants={itemVariants} className="text-center group">
-              <div className="w-16 h-16 bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-6 group-hover:bg-green-900/50 transition-colors duration-300">
-                <BarChart3 className="w-8 h-8 text-green-400" />
-              </div>
-              <h3 className="font-semibold text-white mb-3 text-xl">Weekly digest</h3>
-              <p className="text-gray-400 text-lg">See what we caught + restore</p>
-            </motion.div>
-          </div>
-        </div>
-      </motion.section>
+      <section className="py-24 bg-black relative z-10">
+        <BenefitsSection accentColor="rgb(59, 130, 246)" />
+      </section>
 
       <PricingSection4 />
 
