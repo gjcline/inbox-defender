@@ -99,14 +99,14 @@ export function Landing() {
   return (
     <>
       <SplashCursor />
-      <div className="min-h-screen bg-black relative overflow-hidden">
-        <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff2c_1px,transparent_1px),linear-gradient(to_bottom,#3a3a3a01_1px,transparent_1px)] bg-[size:70px_80px]" />
+      <div className="min-h-screen bg-black relative">
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff2c_1px,transparent_1px),linear-gradient(to_bottom,#3a3a3a01_1px,transparent_1px)] bg-[size:70px_80px] z-10" />
       <SparklesComp
         density={800}
         direction="top"
         speed={0.5}
         color="#FFFFFF"
-        className="absolute inset-0 h-full w-full [mask-image:radial-gradient(50%_50%,white,transparent_85%)]"
+        className="absolute inset-0 h-full w-full [mask-image:radial-gradient(50%_50%,white,transparent_85%)] z-20"
       />
 
       <nav className="relative z-50 border-b border-neutral-800 bg-black/50 backdrop-blur-sm">
