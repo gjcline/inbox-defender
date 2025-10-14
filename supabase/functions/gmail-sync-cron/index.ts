@@ -54,14 +54,19 @@ Deno.serve(async (req: Request) => {
       try {
         const accessToken = connection.access_token;
 
+        // On first sync, fetch from connection creation date
+        // On subsequent syncs, fetch from last sync timestamp
         const lastSyncDate = connection.last_sync_at
           ? new Date(connection.last_sync_at)
-          : new Date(Date.now() - 24 * 60 * 60 * 1000);
+          : new Date(connection.created_at || Date.now() - 7 * 24 * 60 * 60 * 1000);
 
         const afterTimestamp = Math.floor(lastSyncDate.getTime() / 1000);
+        const isFirstSync = !connection.last_sync_at;
 
+        // Fetch more emails on first sync to catch up on history
+        const maxResults = isFirstSync ? 500 : 100;
         const gmailResponse = await fetch(
-          `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=after:${afterTimestamp} in:inbox&maxResults=50`,
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=after:${afterTimestamp} in:inbox&maxResults=${maxResults}`,
           {
             headers: {
               Authorization: `Bearer ${accessToken}`,
@@ -147,6 +152,21 @@ Deno.serve(async (req: Request) => {
               console.error("Error inserting email:", insertError);
             }
 
+            // Always add email to webhook payload (send ALL emails)
+            emailDetails.push({
+              message_id: message.id,
+              thread_id: message.threadId,
+              from: from,
+              sender_email: senderEmail,
+              sender_name: senderName,
+              subject: subject,
+              snippet: message.snippet,
+              received_date: new Date(parseInt(message.internalDate)).toISOString(),
+              label_ids: message.labelIds,
+              current_classification: shouldAutoLabel ? "blocked" : "pending",
+            });
+
+            // Auto-label emails from repeat offenders
             if (shouldAutoLabel) {
               try {
                 await fetch(
@@ -178,22 +198,12 @@ Deno.serve(async (req: Request) => {
               } catch (labelError) {
                 console.error("Error applying label:", labelError);
               }
-            } else {
-              emailDetails.push({
-                message_id: message.id,
-                thread_id: message.threadId,
-                from: from,
-                sender_email: senderEmail,
-                sender_name: senderName,
-                subject: subject,
-                snippet: message.snippet,
-                received_date: new Date(parseInt(message.internalDate)).toISOString(),
-                label_ids: message.labelIds,
-              });
             }
           }
         }
 
+        // Send ALL emails to webhook for AI classification
+        let webhookSent = false;
         if (emailDetails.length > 0 && connection.make_webhook_url) {
           const webhookPayload = {
             user_id: connection.user_id,
@@ -201,16 +211,26 @@ Deno.serve(async (req: Request) => {
             user_email: connection.mailboxes?.email_address || "",
             access_token: accessToken,
             emails: emailDetails,
+            sync_info: {
+              is_first_sync: isFirstSync,
+              total_emails: emailDetails.length,
+              sync_timestamp: new Date().toISOString(),
+            },
           };
 
           try {
-            await fetch(connection.make_webhook_url, {
+            const webhookResponse = await fetch(connection.make_webhook_url, {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
               },
               body: JSON.stringify(webhookPayload),
             });
+
+            webhookSent = webhookResponse.ok;
+            if (!webhookResponse.ok) {
+              console.error("Webhook returned error:", await webhookResponse.text());
+            }
           } catch (webhookError) {
             console.error("Error sending to webhook:", webhookError);
           }
@@ -224,7 +244,8 @@ Deno.serve(async (req: Request) => {
         results.push({
           user_id: connection.user_id,
           new_emails: messageIds.length,
-          webhook_sent: emailDetails.length > 0 && connection.make_webhook_url ? true : false,
+          webhook_sent: webhookSent,
+          is_first_sync: isFirstSync,
         });
       } catch (error) {
         console.error(`Error processing connection ${connection.id}:`, error);

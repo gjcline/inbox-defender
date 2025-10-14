@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Webhook, Save, CheckCircle, AlertCircle } from 'lucide-react';
+import { Webhook, Save, CheckCircle, AlertCircle, Info, Code } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 interface MakeWebhookConfigProps {
@@ -12,6 +12,7 @@ export function MakeWebhookConfig({ userId }: MakeWebhookConfigProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [showDocs, setShowDocs] = useState(false);
 
   useEffect(() => {
     loadWebhookUrl();
@@ -130,6 +131,84 @@ export function MakeWebhookConfig({ userId }: MakeWebhookConfigProps) {
         <code className="text-xs text-blue-400 bg-zinc-800/50 px-2 py-1 rounded mt-1 block">
           {import.meta.env.VITE_SUPABASE_URL}/functions/v1/webhook-from-make
         </code>
+      </div>
+
+      <div className="mt-4 pt-4 border-t border-zinc-800">
+        <button
+          onClick={() => setShowDocs(!showDocs)}
+          className="flex items-center gap-2 text-sm text-blue-400 hover:text-blue-300 transition-colors"
+        >
+          <Info className="w-4 h-4" />
+          {showDocs ? 'Hide' : 'Show'} Webhook Format Documentation
+        </button>
+
+        {showDocs && (
+          <div className="mt-4 space-y-4">
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <Code className="w-4 h-4 text-emerald-400" />
+                <h4 className="text-sm font-semibold text-white">Payload Sent TO Your Make.com Webhook</h4>
+              </div>
+              <pre className="text-xs bg-zinc-950 border border-zinc-700 rounded-lg p-3 overflow-x-auto">
+                <code className="text-zinc-300">{`{
+  "user_id": "uuid",
+  "gmail_connection_id": "uuid",
+  "user_email": "user@example.com",
+  "access_token": "google_oauth_token",
+  "emails": [
+    {
+      "message_id": "gmail_message_id",
+      "thread_id": "gmail_thread_id",
+      "from": "Full Name <email@domain.com>",
+      "sender_email": "email@domain.com",
+      "sender_name": "Full Name",
+      "subject": "Email subject",
+      "snippet": "Email preview text...",
+      "received_date": "2025-10-14T10:30:00Z",
+      "label_ids": ["INBOX", "UNREAD"],
+      "current_classification": "pending"
+    }
+  ],
+  "sync_info": {
+    "is_first_sync": false,
+    "total_emails": 10,
+    "sync_timestamp": "2025-10-14T10:30:00Z"
+  }
+}`}</code>
+              </pre>
+            </div>
+
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <Code className="w-4 h-4 text-blue-400" />
+                <h4 className="text-sm font-semibold text-white">Expected Response FROM Make.com</h4>
+              </div>
+              <p className="text-xs text-zinc-400 mb-2">
+                Your Make.com automation should POST this format back to the webhook-from-make endpoint:
+              </p>
+              <pre className="text-xs bg-zinc-950 border border-zinc-700 rounded-lg p-3 overflow-x-auto">
+                <code className="text-zinc-300">{`{
+  "user_id": "uuid",
+  "access_token": "google_oauth_token",
+  "results": [
+    {
+      "message_id": "gmail_message_id",
+      "classification": "blocked",
+      "ai_confidence_score": 0.85,
+      "ai_reasoning": "This is a cold outreach email...",
+      "action_taken": "labeled_and_archived"
+    }
+  ]
+}`}</code>
+              </pre>
+              <div className="mt-2 p-2 bg-amber-900/20 border border-amber-500/30 rounded-lg">
+                <p className="text-xs text-amber-300">
+                  <strong>Note:</strong> classification must be either "blocked" or "safe". Include the access_token so the system can automatically label emails in Gmail.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

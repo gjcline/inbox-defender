@@ -19,6 +19,7 @@ import { SettingsDrawer } from '../components/dashboard/SettingsDrawer';
 import { Toast } from '../components/dashboard/Toast';
 import { GmailConnect } from '../components/dashboard/GmailConnect';
 import { MakeWebhookConfig } from '../components/dashboard/MakeWebhookConfig';
+import { SyncStatus } from '../components/dashboard/SyncStatus';
 
 const BASE_WEEKLY_DATA = [
   { day: 'Mon', count: 42 },
@@ -75,19 +76,65 @@ export function Dashboard() {
   const [allEmails, setAllEmails] = useState<EmailWithStatus[]>([]);
   const [hasRealData, setHasRealData] = useState(false);
   const [showAllEmails, setShowAllEmails] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) {
       fetchEmails();
+      fetchLastSyncTime();
+
+      // Set up Realtime subscription for live email updates
+      const emailsSubscription = supabase
+        .channel('emails-changes')
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'emails',
+            filter: `user_id=eq.${user.id}`,
+          },
+          (payload) => {
+            console.log('Email change detected:', payload);
+            fetchEmails();
+          }
+        )
+        .subscribe();
+
+      // Poll for updates every 30 seconds as backup
       const interval = setInterval(() => {
         fetchEmails();
+        fetchLastSyncTime();
       }, 30000);
-      return () => clearInterval(interval);
+
+      return () => {
+        clearInterval(interval);
+        emailsSubscription.unsubscribe();
+      };
     } else {
       const timer = setTimeout(() => setLoading(false), 600);
       return () => clearTimeout(timer);
     }
   }, [user]);
+
+  const fetchLastSyncTime = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('gmail_connections')
+        .select('last_sync_at')
+        .eq('user_id', user?.id)
+        .eq('is_active', true)
+        .maybeSingle();
+
+      if (error) throw error;
+      if (data?.last_sync_at) {
+        setLastSyncAt(data.last_sync_at);
+      }
+    } catch (err) {
+      console.error('Error fetching last sync time:', err);
+    }
+  };
 
   const fetchEmails = async () => {
     try {
@@ -239,6 +286,41 @@ export function Dashboard() {
     setShowToast(true);
   };
 
+  const handleManualSync = async () => {
+    setSyncing(true);
+    setToastMessage('');
+
+    try {
+      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/gmail-sync-cron`;
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({}),
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        const totalEmails = result.results?.reduce((sum: number, r: any) => sum + (r.new_emails || 0), 0) || 0;
+        setToastMessage(`Successfully synced ${totalEmails} new email${totalEmails !== 1 ? 's' : ''}`);
+        setShowToast(true);
+        await fetchEmails();
+        await fetchLastSyncTime();
+      } else {
+        throw new Error(result.error || 'Sync failed');
+      }
+    } catch (err) {
+      console.error('Error syncing emails:', err);
+      setToastMessage(err instanceof Error ? err.message : 'Failed to sync emails');
+      setShowToast(true);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     navigate('/');
@@ -273,6 +355,13 @@ export function Dashboard() {
       <main className="max-w-7xl mx-auto px-6 py-8 space-y-8">
         {user && <GmailConnect userId={user.id} />}
         {user && <MakeWebhookConfig userId={user.id} />}
+        {user && (
+          <SyncStatus
+            lastSyncAt={lastSyncAt}
+            onManualSync={handleManualSync}
+            isSyncing={syncing}
+          />
+        )}
 
         <KpiCards
           blockedThisWeek={blockedThisWeek}
