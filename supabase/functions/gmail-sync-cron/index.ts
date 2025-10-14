@@ -34,8 +34,7 @@ Deno.serve(async (req: Request) => {
     const { data: connections, error: connectionsError } = await supabase
       .from("gmail_connections")
       .select("*, mailboxes(email_address)")
-      .eq("is_active", true)
-      .not("make_webhook_url", "is", null);
+      .eq("is_active", true);
 
     if (connectionsError) throw connectionsError;
 
@@ -204,13 +203,17 @@ Deno.serve(async (req: Request) => {
             emails: emailDetails,
           };
 
-          await fetch(connection.make_webhook_url, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(webhookPayload),
-          });
+          try {
+            await fetch(connection.make_webhook_url, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify(webhookPayload),
+            });
+          } catch (webhookError) {
+            console.error("Error sending to webhook:", webhookError);
+          }
         }
 
         await supabase
@@ -221,6 +224,7 @@ Deno.serve(async (req: Request) => {
         results.push({
           user_id: connection.user_id,
           new_emails: messageIds.length,
+          webhook_sent: emailDetails.length > 0 && connection.make_webhook_url ? true : false,
         });
       } catch (error) {
         console.error(`Error processing connection ${connection.id}:`, error);
