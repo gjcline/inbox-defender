@@ -14,6 +14,7 @@ import { KpiCards } from '../components/dashboard/KpiCards';
 import { StrictnessSelector } from '../components/dashboard/StrictnessSelector';
 import { WeeklyChart } from '../components/dashboard/WeeklyChart';
 import { BlockedTable, BlockedEmail } from '../components/dashboard/BlockedTable';
+import { AllEmailsTable, EmailWithStatus } from '../components/dashboard/AllEmailsTable';
 import { SettingsDrawer } from '../components/dashboard/SettingsDrawer';
 import { Toast } from '../components/dashboard/Toast';
 import { GmailConnect } from '../components/dashboard/GmailConnect';
@@ -71,7 +72,9 @@ export function Dashboard() {
   const [toastMessage, setToastMessage] = useState('');
   const [showToast, setShowToast] = useState(false);
   const [realEmails, setRealEmails] = useState<BlockedEmail[]>([]);
+  const [allEmails, setAllEmails] = useState<EmailWithStatus[]>([]);
   const [hasRealData, setHasRealData] = useState(false);
+  const [showAllEmails, setShowAllEmails] = useState(true);
 
   useEffect(() => {
     if (user) {
@@ -88,28 +91,35 @@ export function Dashboard() {
 
   const fetchEmails = async () => {
     try {
-      const { data, error } = await supabase
+      const { data: allData, error: allError } = await supabase
         .from('emails')
-        .select('id, sender_email, subject, ai_confidence_score, received_at, gmail_message_id')
+        .select('id, sender_email, subject, ai_confidence_score, received_at, classification')
         .eq('user_id', user?.id)
-        .eq('classification', 'blocked')
         .order('received_at', { ascending: false })
-        .limit(50);
+        .limit(100);
 
-      if (error) throw error;
+      if (allError) throw allError;
 
-      if (data && data.length > 0) {
-        const mappedEmails: BlockedEmail[] = data.map((email) => ({
+      if (allData && allData.length > 0) {
+        const mappedAllEmails: EmailWithStatus[] = allData.map((email) => ({
           id: email.id,
           sender: email.sender_email,
           subject: email.subject || '(no subject)',
-          score: email.ai_confidence_score || 0.75,
+          score: email.ai_confidence_score || 0,
           dateISO: email.received_at,
+          classification: email.classification || 'pending',
         }));
-        setRealEmails(mappedEmails);
+        setAllEmails(mappedAllEmails);
+
+        const blockedOnly = mappedAllEmails
+          .filter(e => e.classification === 'blocked')
+          .map(({ classification, ...rest }) => rest) as BlockedEmail[];
+        setRealEmails(blockedOnly);
         setHasRealData(true);
       } else {
         setHasRealData(false);
+        setAllEmails([]);
+        setRealEmails([]);
       }
     } catch (err) {
       console.error('Error fetching emails:', err);
@@ -132,12 +142,28 @@ export function Dashboard() {
   }, [emailsToDisplay, scoreThreshold]);
 
   const blockedThisWeek = useMemo(() => {
+    if (hasRealData) {
+      const oneWeekAgo = new Date();
+      oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+      return allEmails.filter(e =>
+        e.classification === 'blocked' &&
+        new Date(e.dateISO) >= oneWeekAgo
+      ).length;
+    }
     return weeklyData.reduce((sum, day) => sum + day.count, 0);
-  }, [weeklyData]);
+  }, [weeklyData, allEmails, hasRealData]);
 
   const blockedToday = useMemo(() => {
+    if (hasRealData) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      return allEmails.filter(e =>
+        e.classification === 'blocked' &&
+        new Date(e.dateISO) >= today
+      ).length;
+    }
     return Math.round(BASE_WEEKLY_DATA[0].count * multiplier);
-  }, [multiplier]);
+  }, [multiplier, allEmails, hasRealData]);
 
   const potentialFalsePositives = useMemo(() => {
     return Math.ceil(blockedThisWeek * falsePositiveRate);
@@ -267,11 +293,42 @@ export function Dashboard() {
 
         <WeeklyChart data={weeklyData} />
 
-        <BlockedTable
-          emails={filteredEmails}
-          onRestore={handleRestore}
-          loading={loading}
-        />
+        <div className="flex gap-3 mb-4">
+          <button
+            onClick={() => setShowAllEmails(true)}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              showAllEmails
+                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                : 'bg-zinc-800 text-zinc-400 border border-zinc-700 hover:bg-zinc-700'
+            }`}
+          >
+            All Emails ({allEmails.length})
+          </button>
+          <button
+            onClick={() => setShowAllEmails(false)}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              !showAllEmails
+                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                : 'bg-zinc-800 text-zinc-400 border border-zinc-700 hover:bg-zinc-700'
+            }`}
+          >
+            Blocked Only ({realEmails.length})
+          </button>
+        </div>
+
+        {showAllEmails ? (
+          <AllEmailsTable
+            emails={allEmails}
+            onRestore={handleRestore}
+            loading={loading}
+          />
+        ) : (
+          <BlockedTable
+            emails={filteredEmails}
+            onRestore={handleRestore}
+            loading={loading}
+          />
+        )}
       </main>
 
       <SettingsDrawer
