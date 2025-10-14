@@ -109,7 +109,14 @@ export function Landing() {
       <nav className="relative z-50 border-b border-neutral-800 bg-black/50 backdrop-blur-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex items-center justify-between">
-            <h1 className="text-2xl font-bold text-white">Inbox Defender</h1>
+            <div className="flex items-center gap-3">
+              <img
+                src="/logoexample1.png"
+                alt="Inbox Defender logo"
+                className="h-8 w-8"
+              />
+              <h1 className="text-2xl font-semibold text-white">Inbox Defender</h1>
+            </div>
             <div className="flex items-center gap-6">
               <a href="#features" className="text-gray-300 hover:text-white transition-colors">Features</a>
               <a href="#pricing" className="text-gray-300 hover:text-white transition-colors">Pricing</a>
