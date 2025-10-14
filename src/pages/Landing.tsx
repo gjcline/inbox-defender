@@ -8,6 +8,7 @@ import { Button } from '../components/ui/button';
 import PricingSection4 from '../components/ui/pricing-section-4';
 import { WhyItWorks } from '../components/ui/WhyItWorks';
 import { BenefitsSection } from '../components/ui/BenefitsSection';
+import { ModernHero } from '../components/ui/ModernHero';
 import {
   Mail,
   Shield,
@@ -129,45 +130,7 @@ export function Landing() {
         </div>
       </nav>
 
-      <motion.section
-        variants={containerVariants}
-        initial="hidden"
-        animate="visible"
-        className="relative z-10 py-32 px-4"
-      >
-        <div className="max-w-5xl mx-auto text-center">
-          <motion.h1
-            variants={itemVariants}
-            className="text-5xl md:text-7xl font-bold text-white mb-8"
-          >
-            Stop cold emails from
-            <br />
-            <span className="bg-gradient-to-r from-blue-400 to-blue-600 bg-clip-text text-transparent">
-              cluttering your inbox
-            </span>
-          </motion.h1>
-          <motion.p
-            variants={itemVariants}
-            className="text-xl md:text-2xl text-gray-300 mb-12 max-w-3xl mx-auto"
-          >
-            AI-powered email filtering that keeps your inbox clean without missing important messages
-          </motion.p>
-          <motion.div variants={itemVariants}>
-            <Button
-              size="lg"
-              onClick={handleGoogleSignIn}
-              disabled={isLoading}
-              className="bg-gradient-to-t from-blue-500 to-blue-600 shadow-lg shadow-blue-800 border border-blue-500 text-white text-lg px-8 py-6"
-            >
-              {isLoading ? (
-                <><Loader2 className="w-5 h-5 mr-2 animate-spin" />Connecting...</>
-              ) : (
-                'Start Free Trial'
-              )}
-            </Button>
-          </motion.div>
-        </div>
-      </motion.section>
+      <ModernHero onGetStarted={handleGoogleSignIn} isLoading={isLoading} />
 
       <section id="features" className="py-24 bg-black relative z-10">
         <WhyItWorks className="mb-16" accentColor="rgb(59, 130, 246)" />
