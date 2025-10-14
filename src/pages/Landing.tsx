@@ -97,9 +97,10 @@ export function Landing() {
   };
 
   return (
-    <div className="min-h-screen bg-black relative overflow-hidden">
+    <>
       <SplashCursor />
-      <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff2c_1px,transparent_1px),linear-gradient(to_bottom,#3a3a3a01_1px,transparent_1px)] bg-[size:70px_80px]" />
+      <div className="min-h-screen bg-black relative overflow-hidden">
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff2c_1px,transparent_1px),linear-gradient(to_bottom,#3a3a3a01_1px,transparent_1px)] bg-[size:70px_80px]" />
       <SparklesComp
         density={800}
         direction="top"
@@ -354,6 +355,7 @@ export function Landing() {
           </motion.div>
         </div>
       </motion.footer>
-    </div>
+      </div>
+    </>
   );
 }
