@@ -33,11 +33,12 @@ export function GmailConnect({ userId }: GmailConnectProps) {
         .from('gmail_connections')
         .select('is_active, mailbox_id, last_sync_at')
         .eq('user_id', userId)
+        .eq('is_active', true)
         .maybeSingle();
 
       if (connError) throw connError;
 
-      if (connectionData?.is_active && connectionData.mailbox_id) {
+      if (connectionData?.mailbox_id) {
         const { data: mailboxData, error: mailboxError } = await supabase
           .from('mailboxes')
           .select('email_address')
