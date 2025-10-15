@@ -129,7 +129,7 @@ export default function PricingSection4() {
   return (
     <div
       id="pricing"
-      className="min-h-screen mx-auto relative bg-black"
+      className="min-h-screen mx-auto relative"
       ref={pricingRef}
     >
       <TimelineContent
