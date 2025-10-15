@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Mail, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
+import { Mail, CheckCircle, AlertCircle, RefreshCw, Unplug } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 interface GmailConnectProps {
@@ -141,6 +141,31 @@ export function GmailConnect({ userId }: GmailConnectProps) {
     window.location.href = authUrl.toString();
   };
 
+  const handleDisconnect = async () => {
+    if (!confirm('Are you sure you want to disconnect Gmail? This will stop email monitoring and protection.')) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const { error } = await supabase
+        .from('gmail_connections')
+        .update({ is_active: false })
+        .eq('user_id', userId)
+        .eq('is_active', true);
+
+      if (error) throw error;
+
+      setSyncMessage('Gmail disconnected successfully');
+      await checkConnection();
+    } catch (err) {
+      console.error('Error disconnecting Gmail:', err);
+      setError(err instanceof Error ? err.message : 'Failed to disconnect Gmail');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-6">
@@ -193,14 +218,24 @@ export function GmailConnect({ userId }: GmailConnectProps) {
               </div>
             )}
 
-            <button
-              onClick={handleSyncNow}
-              disabled={syncing}
-              className="mt-4 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-zinc-700 disabled:cursor-not-allowed text-white rounded-lg transition-colors text-sm font-medium flex items-center gap-2"
-            >
-              <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
-              {syncing ? 'Syncing...' : 'Sync Now'}
-            </button>
+            <div className="flex gap-2 mt-4">
+              <button
+                onClick={handleSyncNow}
+                disabled={syncing}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-zinc-700 disabled:cursor-not-allowed text-white rounded-lg transition-colors text-sm font-medium flex items-center gap-2"
+              >
+                <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
+                {syncing ? 'Syncing...' : 'Sync Now'}
+              </button>
+              <button
+                onClick={handleDisconnect}
+                disabled={syncing}
+                className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 disabled:bg-zinc-700 disabled:cursor-not-allowed text-zinc-400 hover:text-white rounded-lg transition-colors text-sm font-medium flex items-center gap-2"
+              >
+                <Unplug className="w-4 h-4" />
+                Disconnect
+              </button>
+            </div>
           </div>
         </div>
       </div>

@@ -286,11 +286,48 @@ export function Dashboard() {
     setShowToast(true);
   };
 
-  const handleManualSync = async () => {
+  const handleManualSync = async (options?: { dateRange?: string; resetSync?: boolean }) => {
     setSyncing(true);
     setToastMessage('');
 
     try {
+      // If resetSync is true, clear the last_sync_at timestamp first
+      if (options?.resetSync && user) {
+        await supabase
+          .from('gmail_connections')
+          .update({ last_sync_at: null })
+          .eq('user_id', user.id)
+          .eq('is_active', true);
+      }
+
+      // If dateRange is specified, set last_sync_at to that range
+      if (options?.dateRange && user) {
+        let hoursBack = 0;
+        switch (options.dateRange) {
+          case '1h':
+            hoursBack = 1;
+            break;
+          case '24h':
+            hoursBack = 24;
+            break;
+          case '7d':
+            hoursBack = 24 * 7;
+            break;
+          case '30d':
+            hoursBack = 24 * 30;
+            break;
+        }
+
+        if (hoursBack > 0) {
+          const targetDate = new Date(Date.now() - hoursBack * 60 * 60 * 1000);
+          await supabase
+            .from('gmail_connections')
+            .update({ last_sync_at: targetDate.toISOString() })
+            .eq('user_id', user.id)
+            .eq('is_active', true);
+        }
+      }
+
       const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/gmail-sync-cron`;
       const response = await fetch(apiUrl, {
         method: 'POST',

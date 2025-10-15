@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
-import { Clock, RefreshCw, CheckCircle, AlertCircle } from 'lucide-react';
+import { Clock, RefreshCw, CheckCircle, AlertCircle, ChevronDown } from 'lucide-react';
 
 interface SyncStatusProps {
   lastSyncAt: string | null;
-  onManualSync: () => void;
+  onManualSync: (options?: { dateRange?: string; resetSync?: boolean }) => void;
   isSyncing: boolean;
 }
 
@@ -11,6 +11,7 @@ export function SyncStatus({ lastSyncAt, onManualSync, isSyncing }: SyncStatusPr
   const [timeUntilNextSync, setTimeUntilNextSync] = useState<number>(0);
   const [lastSyncText, setLastSyncText] = useState<string>('Never');
   const [autoSyncEnabled, setAutoSyncEnabled] = useState<boolean>(true);
+  const [showSyncOptions, setShowSyncOptions] = useState<boolean>(false);
 
   useEffect(() => {
     const updateTimes = () => {
@@ -137,14 +138,85 @@ export function SyncStatus({ lastSyncAt, onManualSync, isSyncing }: SyncStatusPr
           </div>
         </div>
 
-        <button
-          onClick={onManualSync}
-          disabled={isSyncing}
-          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-zinc-700 disabled:cursor-not-allowed text-white rounded-lg transition-colors text-sm font-medium flex items-center gap-2"
-        >
-          <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
-          {isSyncing ? 'Syncing...' : 'Sync Now'}
-        </button>
+        <div className="relative">
+          <button
+            onClick={() => onManualSync()}
+            disabled={isSyncing}
+            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-zinc-700 disabled:cursor-not-allowed text-white rounded-lg transition-colors text-sm font-medium flex items-center gap-2"
+          >
+            <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+            {isSyncing ? 'Syncing...' : 'Sync Now'}
+          </button>
+          <button
+            onClick={() => setShowSyncOptions(!showSyncOptions)}
+            disabled={isSyncing}
+            className="ml-1 px-2 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-zinc-700 disabled:cursor-not-allowed text-white rounded-lg transition-colors text-sm font-medium"
+            title="Sync options"
+          >
+            <ChevronDown className={`w-4 h-4 transition-transform ${showSyncOptions ? 'rotate-180' : ''}`} />
+          </button>
+
+          {showSyncOptions && (
+            <div className="absolute right-0 top-full mt-2 w-64 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl z-10 overflow-hidden">
+              <div className="p-2">
+                <div className="text-xs font-medium text-zinc-400 px-2 py-1.5">Quick Sync Options</div>
+                <button
+                  onClick={() => {
+                    onManualSync({ dateRange: '1h' });
+                    setShowSyncOptions(false);
+                  }}
+                  disabled={isSyncing}
+                  className="w-full text-left px-3 py-2 text-sm text-white hover:bg-zinc-700 rounded transition-colors disabled:opacity-50"
+                >
+                  Sync Last Hour
+                </button>
+                <button
+                  onClick={() => {
+                    onManualSync({ dateRange: '24h' });
+                    setShowSyncOptions(false);
+                  }}
+                  disabled={isSyncing}
+                  className="w-full text-left px-3 py-2 text-sm text-white hover:bg-zinc-700 rounded transition-colors disabled:opacity-50"
+                >
+                  Sync Last 24 Hours
+                </button>
+                <button
+                  onClick={() => {
+                    onManualSync({ dateRange: '7d' });
+                    setShowSyncOptions(false);
+                  }}
+                  disabled={isSyncing}
+                  className="w-full text-left px-3 py-2 text-sm text-white hover:bg-zinc-700 rounded transition-colors disabled:opacity-50"
+                >
+                  Sync Last 7 Days
+                </button>
+                <button
+                  onClick={() => {
+                    onManualSync({ dateRange: '30d' });
+                    setShowSyncOptions(false);
+                  }}
+                  disabled={isSyncing}
+                  className="w-full text-left px-3 py-2 text-sm text-white hover:bg-zinc-700 rounded transition-colors disabled:opacity-50"
+                >
+                  Sync Last 30 Days
+                </button>
+                <div className="h-px bg-zinc-700 my-1" />
+                <button
+                  onClick={() => {
+                    if (confirm('This will reset your sync history and re-fetch all recent emails. Continue?')) {
+                      onManualSync({ resetSync: true });
+                      setShowSyncOptions(false);
+                    }
+                  }}
+                  disabled={isSyncing}
+                  className="w-full text-left px-3 py-2 text-sm text-amber-400 hover:bg-zinc-700 rounded transition-colors disabled:opacity-50"
+                >
+                  Reset Sync History
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

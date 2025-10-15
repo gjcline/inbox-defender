@@ -54,19 +54,32 @@ Deno.serve(async (req: Request) => {
       try {
         const accessToken = connection.access_token;
 
-        // On first sync, fetch from connection creation date
-        // On subsequent syncs, fetch from last sync timestamp
+        // On first sync, fetch from 30 days ago to catch recent history
+        // On subsequent syncs, fetch from last sync timestamp with 5-minute buffer
         const lastSyncDate = connection.last_sync_at
           ? new Date(connection.last_sync_at)
-          : new Date(connection.created_at || Date.now() - 7 * 24 * 60 * 60 * 1000);
+          : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
-        const afterTimestamp = Math.floor(lastSyncDate.getTime() / 1000);
+        // Subtract 5 minutes buffer to prevent missing emails from edge cases
+        const bufferMs = 5 * 60 * 1000;
+        const queryDate = new Date(lastSyncDate.getTime() - bufferMs);
+
+        // Format date as YYYY/MM/DD for Gmail API (more reliable than Unix timestamp)
+        const year = queryDate.getFullYear();
+        const month = String(queryDate.getMonth() + 1).padStart(2, '0');
+        const day = String(queryDate.getDate()).padStart(2, '0');
+        const afterDate = `${year}/${month}/${day}`;
+
         const isFirstSync = !connection.last_sync_at;
 
         // Fetch more emails on first sync to catch up on history
         const maxResults = isFirstSync ? 500 : 100;
+
+        const gmailQuery = `after:${afterDate} in:inbox`;
+        console.log(`Syncing for user ${connection.user_id}: query="${gmailQuery}", maxResults=${maxResults}`);
+
         const gmailResponse = await fetch(
-          `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=after:${afterTimestamp} in:inbox&maxResults=${maxResults}`,
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(gmailQuery)}&maxResults=${maxResults}`,
           {
             headers: {
               Authorization: `Bearer ${accessToken}`,

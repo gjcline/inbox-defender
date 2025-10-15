@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Mail, Settings as SettingsIcon, Trash2, AlertTriangle } from 'lucide-react';
+import { Mail, Settings as SettingsIcon, Trash2, AlertTriangle, RefreshCw, CheckCircle, XCircle } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
 
 interface Mailbox {
   id: string;
@@ -15,10 +16,20 @@ interface OrgSettings {
   retention_days: number;
 }
 
+interface GmailConnection {
+  id: string;
+  is_active: boolean;
+  last_sync_at: string | null;
+  token_expires_at: string | null;
+  email_address: string;
+}
+
 export function Settings() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [mailboxes, setMailboxes] = useState<Mailbox[]>([]);
   const [settings, setSettings] = useState<OrgSettings | null>(null);
+  const [gmailConnection, setGmailConnection] = useState<GmailConnection | null>(null);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
 
@@ -42,6 +53,34 @@ export function Settings() {
 
       if (settingsError && settingsError.code !== 'PGRST116') {
         throw settingsError;
+      }
+
+      // Load Gmail connection data
+      if (user) {
+        const { data: connData, error: connError } = await supabase
+          .from('gmail_connections')
+          .select('id, is_active, last_sync_at, token_expires_at, mailbox_id')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (connError && connError.code !== 'PGRST116') {
+          throw connError;
+        }
+
+        if (connData && connData.mailbox_id) {
+          const { data: mailboxInfo, error: mailboxInfoError } = await supabase
+            .from('mailboxes')
+            .select('email_address')
+            .eq('id', connData.mailbox_id)
+            .maybeSingle();
+
+          if (!mailboxInfoError && mailboxInfo) {
+            setGmailConnection({
+              ...connData,
+              email_address: mailboxInfo.email_address,
+            });
+          }
+        }
       }
 
       setMailboxes(mailboxData || []);
@@ -76,6 +115,61 @@ export function Settings() {
     } catch (error) {
       console.error('Failed to disconnect mailbox:', error);
       alert('Failed to disconnect mailbox. Please try again.');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleGmailConnect = async () => {
+    if (!user) return;
+
+    const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+    const redirectUri = `${window.location.origin}/auth/gmail/callback`;
+
+    if (!clientId || clientId === 'undefined') {
+      alert('Google Client ID not configured. Please check your environment variables.');
+      return;
+    }
+
+    const scopes = [
+      'https://www.googleapis.com/auth/gmail.modify',
+      'https://www.googleapis.com/auth/userinfo.email',
+    ].join(' ');
+
+    const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+    authUrl.searchParams.append('client_id', clientId);
+    authUrl.searchParams.append('redirect_uri', redirectUri);
+    authUrl.searchParams.append('response_type', 'code');
+    authUrl.searchParams.append('scope', scopes);
+    authUrl.searchParams.append('access_type', 'offline');
+    authUrl.searchParams.append('prompt', 'consent');
+    authUrl.searchParams.append('state', user.id);
+
+    window.location.href = authUrl.toString();
+  };
+
+  const handleGmailDisconnect = async () => {
+    if (!confirm('Are you sure you want to disconnect Gmail? This will stop email monitoring and protection.')) {
+      return;
+    }
+
+    setDeleting(true);
+    try {
+      if (!user) throw new Error('Not authenticated');
+
+      const { error } = await supabase
+        .from('gmail_connections')
+        .update({ is_active: false })
+        .eq('user_id', user.id)
+        .eq('is_active', true);
+
+      if (error) throw error;
+
+      await loadSettings();
+      alert('Gmail disconnected successfully');
+    } catch (error) {
+      console.error('Failed to disconnect Gmail:', error);
+      alert('Failed to disconnect Gmail. Please try again.');
     } finally {
       setDeleting(false);
     }
@@ -120,6 +214,65 @@ export function Settings() {
         </div>
 
         <div className="space-y-6">
+          <div className="bg-white rounded-lg shadow">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <h2 className="text-lg font-semibold text-gray-900">Gmail Connection</h2>
+              <p className="text-sm text-gray-600">Manage your Gmail account connection</p>
+            </div>
+            <div className="p-6">
+              {gmailConnection && gmailConnection.is_active ? (
+                <div className="space-y-4">
+                  <div className="flex items-start gap-4 p-4 bg-emerald-50 border border-emerald-200 rounded-lg">
+                    <CheckCircle className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="font-medium text-emerald-900">{gmailConnection.email_address}</p>
+                      <p className="text-sm text-emerald-700 mt-1">
+                        Status: Connected and Active
+                      </p>
+                      {gmailConnection.last_sync_at && (
+                        <p className="text-xs text-emerald-600 mt-1">
+                          Last synced: {new Date(gmailConnection.last_sync_at).toLocaleString()}
+                        </p>
+                      )}
+                      {gmailConnection.token_expires_at && (
+                        <p className="text-xs text-emerald-600">
+                          Token expires: {new Date(gmailConnection.token_expires_at).toLocaleString()}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={handleGmailConnect}
+                      disabled={deleting}
+                    >
+                      <RefreshCw className="w-4 h-4 mr-2" />
+                      Reconnect Gmail
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={handleGmailDisconnect}
+                      disabled={deleting}
+                      className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                    >
+                      <XCircle className="w-4 h-4 mr-2" />
+                      Disconnect
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <Mail className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                  <p className="text-gray-500 mb-4">No Gmail account connected</p>
+                  <Button onClick={handleGmailConnect}>
+                    Connect Gmail
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
+
           <div className="bg-white rounded-lg shadow">
             <div className="px-6 py-4 border-b border-gray-200">
               <h2 className="text-lg font-semibold text-gray-900">Connected Mailboxes</h2>
