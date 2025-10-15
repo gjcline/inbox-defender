@@ -142,6 +142,32 @@ Deno.serve(async (req: Request) => {
       console.error("Settings creation error:", settingsError);
     }
 
+    // Trigger an immediate sync after successful connection
+    try {
+      console.log("Triggering initial sync for user:", userId);
+      const syncResponse = await fetch(`${supabaseUrl}/functions/v1/gmail-sync-cron`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${supabaseServiceKey}`,
+          "apikey": supabaseServiceKey,
+        },
+        body: JSON.stringify({
+          triggered_by: "oauth_callback",
+          user_id: userId,
+        }),
+      });
+
+      if (syncResponse.ok) {
+        console.log("Initial sync triggered successfully");
+      } else {
+        console.error("Failed to trigger initial sync:", await syncResponse.text());
+      }
+    } catch (syncError) {
+      console.error("Error triggering initial sync:", syncError);
+      // Don't fail the OAuth flow if sync fails
+    }
+
     return new Response(
       JSON.stringify({
         success: true,

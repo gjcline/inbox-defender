@@ -10,6 +10,7 @@ interface SyncStatusProps {
 export function SyncStatus({ lastSyncAt, onManualSync, isSyncing }: SyncStatusProps) {
   const [timeUntilNextSync, setTimeUntilNextSync] = useState<number>(0);
   const [lastSyncText, setLastSyncText] = useState<string>('Never');
+  const [autoSyncEnabled, setAutoSyncEnabled] = useState<boolean>(true);
 
   useEffect(() => {
     const updateTimes = () => {
@@ -22,8 +23,10 @@ export function SyncStatus({ lastSyncAt, onManualSync, isSyncing }: SyncStatusPr
 
         if (msUntilNextSync > 0) {
           setTimeUntilNextSync(Math.floor(msUntilNextSync / 1000));
+          setAutoSyncEnabled(true);
         } else {
           setTimeUntilNextSync(0);
+          setAutoSyncEnabled(true);
         }
 
         // Update "last sync" text
@@ -93,7 +96,21 @@ export function SyncStatus({ lastSyncAt, onManualSync, isSyncing }: SyncStatusPr
 
   return (
     <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div className="flex items-center gap-2 mb-2 sm:mb-0">
+          <div className={`w-2 h-2 rounded-full ${
+            autoSyncEnabled && timeUntilNextSync > 0
+              ? 'bg-emerald-500 animate-pulse'
+              : autoSyncEnabled
+              ? 'bg-amber-500'
+              : 'bg-zinc-500'
+          }`} />
+          <span className="text-xs font-medium text-zinc-400">
+            {autoSyncEnabled ? 'Auto-sync Active' : 'Auto-sync Disabled'}
+          </span>
+        </div>
+
+        <div className="flex-1" />
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
             <Clock className="w-4 h-4 text-zinc-400" />

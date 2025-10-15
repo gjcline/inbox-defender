@@ -180,6 +180,12 @@ export function GmailConnect({ userId }: GmailConnectProps) {
               </div>
             )}
 
+            <div className="mt-4 p-3 bg-zinc-800/50 border border-zinc-700 rounded-lg">
+              <p className="text-xs text-zinc-400 leading-relaxed">
+                <span className="font-semibold text-zinc-300">Automatic sync is active.</span> New emails are checked every 15 minutes automatically. The "Sync Now" button lets you check for new emails immediately.
+              </p>
+            </div>
+
             {error && (
               <div className="flex items-center gap-2 mt-3 text-sm text-red-400">
                 <AlertCircle className="w-4 h-4" />
