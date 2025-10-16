@@ -344,9 +344,9 @@ export function Landing() {
           >
             <div className="flex gap-8 mb-8 md:mb-0">
               <a href="#" className="text-gray-400 hover:text-white transition-colors duration-200">Docs</a>
-              <a href="#" className="text-gray-400 hover:text-white transition-colors duration-200">Privacy</a>
-              <a href="#" className="text-gray-400 hover:text-white transition-colors duration-200">Terms</a>
-              <a href="#" className="text-gray-400 hover:text-white transition-colors duration-200">Support</a>
+              <a href="/privacy" className="text-gray-400 hover:text-white transition-colors duration-200">Privacy</a>
+              <a href="/terms" className="text-gray-400 hover:text-white transition-colors duration-200">Terms</a>
+              <a href="mailto:info@bliztic.com" className="text-gray-400 hover:text-white transition-colors duration-200">Support</a>
             </div>
 
             <p className="text-gray-500 text-sm">
