@@ -124,7 +124,7 @@ export function Settings() {
     if (!user) return;
 
     const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-    const redirectUri = `${window.location.origin}/auth/gmail/callback`;
+    const redirectUri = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/gmail-oauth-callback`;
 
     if (!clientId || clientId === 'undefined') {
       alert('Google Client ID not configured. Please check your environment variables.');

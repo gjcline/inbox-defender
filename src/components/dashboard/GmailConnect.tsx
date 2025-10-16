@@ -106,7 +106,7 @@ export function GmailConnect({ userId }: GmailConnectProps) {
 
   const handleConnect = async () => {
     const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-    const redirectUri = `${window.location.origin}/auth/gmail/callback`;
+    const redirectUri = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/gmail-oauth-callback`;
 
     console.log('🔍 Gmail OAuth Debug Info:');
     console.log('Client ID:', clientId);
