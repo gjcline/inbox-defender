@@ -32,12 +32,14 @@ Deno.serve(async (req: Request) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const googleClientId = Deno.env.get("GOOGLE_CLIENT_ID")!;
     const googleClientSecret = Deno.env.get("GOOGLE_CLIENT_SECRET")!;
+    const frontendUrl = Deno.env.get("FRONTEND_URL") || "https://app.bliztic.com";
 
     console.log("Environment check:");
     console.log("- Supabase URL:", supabaseUrl ? "✓" : "✗");
     console.log("- Service Key:", supabaseServiceKey ? "✓" : "✗");
     console.log("- Google Client ID:", googleClientId ? "✓" : "✗");
     console.log("- Google Client Secret:", googleClientSecret ? "✓" : "✗");
+    console.log("- Frontend URL:", frontendUrl);
 
     if (!googleClientId || !googleClientSecret) {
       throw new Error("Google OAuth credentials not configured");
@@ -234,7 +236,7 @@ Deno.serve(async (req: Request) => {
 
     // For GET requests (OAuth callback), redirect to dashboard
     if (req.method === "GET") {
-      const dashboardUrl = "https://app.bliztic.com/dashboard?gmail_connected=true";
+      const dashboardUrl = `${frontendUrl}/dashboard?gmail_connected=true`;
       console.log("Redirecting to:", dashboardUrl);
       return new Response(null, {
         status: 302,
@@ -267,8 +269,9 @@ Deno.serve(async (req: Request) => {
 
     // For GET requests (OAuth callback), redirect to dashboard with error
     if (req.method === "GET") {
+      const frontendUrl = Deno.env.get("FRONTEND_URL") || "https://app.bliztic.com";
       const errorMessage = error instanceof Error ? error.message : "OAuth callback failed";
-      const dashboardUrl = `https://app.bliztic.com/dashboard?gmail_error=${encodeURIComponent(errorMessage)}`;
+      const dashboardUrl = `${frontendUrl}/dashboard?gmail_error=${encodeURIComponent(errorMessage)}`;
       console.log("Redirecting to dashboard with error:", dashboardUrl);
       return new Response(null, {
         status: 302,

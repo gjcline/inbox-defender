@@ -1,1 +1,5 @@
+# Proxy Supabase Edge Functions
+/functions/*  https://bazeyxgsgodhnwckttxi.supabase.co/functions/:splat  200!
+
+# SPA fallback - must be last
 /*    /index.html   200

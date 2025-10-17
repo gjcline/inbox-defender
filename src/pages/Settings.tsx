@@ -124,7 +124,8 @@ export function Settings() {
     if (!user) return;
 
     const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-    const redirectUri = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/gmail-oauth-callback`;
+    const appDomain = import.meta.env.VITE_APP_DOMAIN || 'https://app.bliztic.com';
+    const redirectUri = `${appDomain}/functions/v1/gmail-oauth-callback`;
 
     if (!clientId || clientId === 'undefined') {
       alert('Google Client ID not configured. Please check your environment variables.');

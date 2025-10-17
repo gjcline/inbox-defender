@@ -106,10 +106,12 @@ export function GmailConnect({ userId }: GmailConnectProps) {
 
   const handleConnect = async () => {
     const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-    const redirectUri = 'https://app.bliztic.com/functions/v1/gmail-oauth-callback';
+    const appDomain = import.meta.env.VITE_APP_DOMAIN || 'https://app.bliztic.com';
+    const redirectUri = `${appDomain}/functions/v1/gmail-oauth-callback`;
 
     console.log('🔍 Gmail OAuth Debug Info:');
     console.log('Client ID:', clientId);
+    console.log('App Domain:', appDomain);
     console.log('Redirect URI:', redirectUri);
     console.log('User ID:', userId);
     console.log('⚠️  Make sure this EXACT redirect URI is added in Google Cloud Console:');
