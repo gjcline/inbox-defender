@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { GOOGLE_REDIRECT_URI } from '../lib/oauthConfig';
 
 export function GoogleCallback() {
   const navigate = useNavigate();
@@ -40,8 +41,6 @@ export function GoogleCallback() {
 
       const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
       const clientSecret = import.meta.env.VITE_GOOGLE_CLIENT_SECRET;
-      const appDomain = import.meta.env.VITE_APP_DOMAIN || 'https://app.bliztic.com';
-      const redirectUri = `${appDomain}/api/auth/google/callback`;
 
       if (!clientId || !clientSecret) {
         throw new Error('OAuth configuration missing');
@@ -56,7 +55,7 @@ export function GoogleCallback() {
           code,
           client_id: clientId,
           client_secret: clientSecret,
-          redirect_uri: redirectUri,
+          redirect_uri: GOOGLE_REDIRECT_URI,
           grant_type: 'authorization_code',
         }),
         signal: AbortSignal.timeout(30000),

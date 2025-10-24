@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Mail, CheckCircle, AlertCircle, RefreshCw, Unplug } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { buildAuthUrl } from '../../lib/oauthConfig';
 
 interface GmailConnectProps {
   userId: string;
@@ -105,57 +106,13 @@ export function GmailConnect({ userId }: GmailConnectProps) {
   };
 
   const handleConnect = async () => {
-    const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-    const redirectUri = `${supabaseUrl}/functions/v1/gmail-oauth-callback`;
-
-    console.log('🔍 Gmail OAuth Debug Info:');
-    console.log('Client ID:', clientId);
-    console.log('Supabase URL:', supabaseUrl);
-    console.log('Redirect URI:', redirectUri);
-    console.log('User ID:', userId);
-    console.log('⚠️  Make sure this EXACT redirect URI is added in Google Cloud Console:');
-    console.log(`   ${redirectUri}`);
-
-    if (!clientId || clientId === 'undefined') {
-      console.error('❌ VITE_GOOGLE_CLIENT_ID is not set!');
-      setError('Google Client ID not configured. Please check your environment variables.');
-      return;
+    try {
+      const authUrl = buildAuthUrl(userId);
+      window.location.href = authUrl;
+    } catch (error) {
+      console.error('Failed to build OAuth URL:', error);
+      setError(error instanceof Error ? error.message : 'Failed to start OAuth flow');
     }
-
-    if (!supabaseUrl || supabaseUrl === 'undefined') {
-      console.error('❌ VITE_SUPABASE_URL is not set!');
-      setError('Supabase URL not configured. Please check your environment variables.');
-      return;
-    }
-
-    const scopes = [
-      'https://www.googleapis.com/auth/gmail.modify',
-      'https://www.googleapis.com/auth/userinfo.email',
-    ].join(' ');
-
-    const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-    authUrl.searchParams.append('client_id', clientId);
-    authUrl.searchParams.append('redirect_uri', redirectUri);
-    authUrl.searchParams.append('response_type', 'code');
-    authUrl.searchParams.append('scope', scopes);
-    authUrl.searchParams.append('access_type', 'offline');
-    authUrl.searchParams.append('prompt', 'consent');
-    authUrl.searchParams.append('state', userId);
-
-    console.log('🚀 Redirecting to Google OAuth...');
-    console.log('Full URL:', authUrl.toString());
-    console.log('');
-    console.log('✅ IMPORTANT: Ensure this redirect URI is in Google Cloud Console:');
-    console.log(`   ${redirectUri}`);
-    console.log('');
-    console.log('📝 Steps to add it:');
-    console.log('   1. Go to Google Cloud Console > APIs & Services > Credentials');
-    console.log('   2. Click on your OAuth 2.0 Client ID');
-    console.log('   3. Add the redirect URI above to "Authorized redirect URIs"');
-    console.log('   4. Save and wait 5-10 minutes for changes to propagate');
-
-    window.location.href = authUrl.toString();
   };
 
   const handleDisconnect = async () => {

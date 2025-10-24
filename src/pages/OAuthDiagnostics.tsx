@@ -5,6 +5,7 @@ import { Button } from '../components/ui/button';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { refreshGmailToken } from '../lib/gmailAuth';
+import { OAUTH_SCOPES, GOOGLE_REDIRECT_URI, buildAuthUrl } from '../lib/oauthConfig';
 
 interface TestResult {
   success: boolean;
@@ -169,9 +170,14 @@ export function OAuthDiagnostics() {
   };
 
   const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
-  const redirectUri = `${import.meta.env.VITE_APP_DOMAIN || 'https://app.bliztic.com'}/api/auth/google/callback`;
-  const scopes = 'gmail.modify, openid, email, profile';
   const minutesUntilExpiry = getTimeUntilExpiry();
+
+  let previewAuthUrl = '';
+  try {
+    previewAuthUrl = buildAuthUrl('diagnostics-test');
+  } catch (error) {
+    console.error('Failed to build preview auth URL:', error);
+  }
 
   if (loading) {
     return (
@@ -233,7 +239,7 @@ export function OAuthDiagnostics() {
                   Redirect URI
                 </label>
                 <code className="block px-3 py-2 bg-gray-50 border border-gray-200 rounded text-sm text-gray-600 font-mono break-all">
-                  {redirectUri}
+                  {GOOGLE_REDIRECT_URI}
                 </code>
               </div>
               <div>
@@ -241,8 +247,19 @@ export function OAuthDiagnostics() {
                   OAuth Scopes
                 </label>
                 <code className="block px-3 py-2 bg-gray-50 border border-gray-200 rounded text-sm text-gray-600 font-mono">
-                  {scopes}
+                  {OAUTH_SCOPES}
                 </code>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Preview OAuth URL
+                </label>
+                <code className="block px-3 py-2 bg-gray-50 border border-gray-200 rounded text-xs text-gray-600 font-mono break-all overflow-x-auto">
+                  {previewAuthUrl || 'Failed to generate - check console'}
+                </code>
+                <p className="text-xs text-gray-500 mt-1">
+                  This is the exact URL that buildAuthUrl generates (with state=diagnostics-test)
+                </p>
               </div>
             </div>
           </div>

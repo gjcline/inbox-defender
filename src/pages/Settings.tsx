@@ -4,7 +4,8 @@ import { Mail, Settings as SettingsIcon, Trash2, AlertTriangle, RefreshCw, Check
 import { Button } from '../components/ui/button';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { buildGmailAuthUrl, disconnectGmail, clearGmailTokensForReconnect } from '../lib/gmailAuth';
+import { disconnectGmail, clearGmailTokensForReconnect } from '../lib/gmailAuth';
+import { buildAuthUrl } from '../lib/oauthConfig';
 
 interface Mailbox {
   id: string;
@@ -128,7 +129,7 @@ export function Settings() {
     if (!user) return;
 
     try {
-      const authUrl = buildGmailAuthUrl(user.id, false);
+      const authUrl = buildAuthUrl(user.id);
       window.location.href = authUrl;
     } catch (error) {
       setToast({
@@ -152,7 +153,7 @@ export function Settings() {
         throw new Error(result.error || 'Failed to prepare reconnect');
       }
 
-      const authUrl = buildGmailAuthUrl(user.id, true);
+      const authUrl = buildAuthUrl(user.id);
       window.location.href = authUrl;
     } catch (error) {
       console.error('Failed to reconnect Gmail:', error);
