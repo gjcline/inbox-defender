@@ -3,6 +3,8 @@ import { Landing } from './pages/Landing';
 import { Dashboard } from './pages/Dashboard';
 import { Settings } from './pages/Settings';
 import { GmailCallback } from './pages/GmailCallback';
+import { GoogleCallback } from './pages/GoogleCallback';
+import { OAuthDiagnostics } from './pages/OAuthDiagnostics';
 import { Terms } from './pages/Terms';
 import { Privacy } from './pages/Privacy';
 import { AuthProvider } from './contexts/AuthContext';
@@ -36,6 +38,22 @@ function App() {
           element={
             <ProtectedRoute>
               <GmailCallback />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/api/auth/google/callback"
+          element={
+            <ProtectedRoute>
+              <GoogleCallback />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/oauth-diagnostics"
+          element={
+            <ProtectedRoute>
+              <OAuthDiagnostics />
             </ProtectedRoute>
           }
         />

@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Mail, Settings as SettingsIcon, Trash2, AlertTriangle, RefreshCw, CheckCircle, XCircle } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { buildGmailAuthUrl, disconnectGmail, clearGmailTokensForReconnect } from '../lib/gmailAuth';
 
 interface Mailbox {
   id: string;
@@ -26,16 +27,28 @@ interface GmailConnection {
 
 export function Settings() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { user } = useAuth();
   const [mailboxes, setMailboxes] = useState<Mailbox[]>([]);
   const [settings, setSettings] = useState<OrgSettings | null>(null);
   const [gmailConnection, setGmailConnection] = useState<GmailConnection | null>(null);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   useEffect(() => {
     loadSettings();
-  }, []);
+    const gmailConnected = searchParams.get('gmail_connected');
+    const gmailError = searchParams.get('gmail_error');
+    if (gmailConnected === 'true') {
+      setToast({ type: 'success', message: 'Gmail connected successfully!' });
+      setTimeout(() => setToast(null), 5000);
+    } else if (gmailError === 'true') {
+      setToast({ type: 'error', message: 'Failed to connect Gmail. Please try again.' });
+      setTimeout(() => setToast(null), 5000);
+    }
+  }, [searchParams]);
 
   const loadSettings = async () => {
     try {
@@ -55,11 +68,10 @@ export function Settings() {
         throw settingsError;
       }
 
-      // Load Gmail connection data
       if (user) {
         const { data: connData, error: connError } = await supabase
           .from('gmail_connections')
-          .select('id, is_active, last_sync_at, token_expires_at, mailbox_id')
+          .select('id, is_active, last_sync_at, token_expires_at, email')
           .eq('user_id', user.id)
           .maybeSingle();
 
@@ -67,19 +79,11 @@ export function Settings() {
           throw connError;
         }
 
-        if (connData && connData.mailbox_id) {
-          const { data: mailboxInfo, error: mailboxInfoError } = await supabase
-            .from('mailboxes')
-            .select('email_address')
-            .eq('id', connData.mailbox_id)
-            .maybeSingle();
-
-          if (!mailboxInfoError && mailboxInfo) {
-            setGmailConnection({
-              ...connData,
-              email_address: mailboxInfo.email_address,
-            });
-          }
+        if (connData && connData.email) {
+          setGmailConnection({
+            ...connData,
+            email_address: connData.email,
+          });
         }
       }
 
@@ -123,30 +127,41 @@ export function Settings() {
   const handleGmailConnect = async () => {
     if (!user) return;
 
-    const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-    const appDomain = import.meta.env.VITE_APP_DOMAIN || 'https://app.bliztic.com';
-    const redirectUri = `${appDomain}/functions/v1/gmail-oauth-callback`;
+    try {
+      const authUrl = buildGmailAuthUrl(user.id, false);
+      window.location.href = authUrl;
+    } catch (error) {
+      setToast({
+        type: 'error',
+        message: error instanceof Error ? error.message : 'Failed to start OAuth flow',
+      });
+    }
+  };
 
-    if (!clientId || clientId === 'undefined') {
-      alert('Google Client ID not configured. Please check your environment variables.');
+  const handleGmailReconnect = async () => {
+    if (!user) return;
+
+    if (!confirm('Reconnecting will require you to grant Gmail access again. Continue?')) {
       return;
     }
 
-    const scopes = [
-      'https://www.googleapis.com/auth/gmail.modify',
-      'https://www.googleapis.com/auth/userinfo.email',
-    ].join(' ');
+    setReconnecting(true);
+    try {
+      const result = await clearGmailTokensForReconnect(user.id);
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to prepare reconnect');
+      }
 
-    const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-    authUrl.searchParams.append('client_id', clientId);
-    authUrl.searchParams.append('redirect_uri', redirectUri);
-    authUrl.searchParams.append('response_type', 'code');
-    authUrl.searchParams.append('scope', scopes);
-    authUrl.searchParams.append('access_type', 'offline');
-    authUrl.searchParams.append('prompt', 'consent');
-    authUrl.searchParams.append('state', user.id);
-
-    window.location.href = authUrl.toString();
+      const authUrl = buildGmailAuthUrl(user.id, true);
+      window.location.href = authUrl;
+    } catch (error) {
+      console.error('Failed to reconnect Gmail:', error);
+      setToast({
+        type: 'error',
+        message: error instanceof Error ? error.message : 'Failed to reconnect Gmail',
+      });
+      setReconnecting(false);
+    }
   };
 
   const handleGmailDisconnect = async () => {
@@ -158,19 +173,20 @@ export function Settings() {
     try {
       if (!user) throw new Error('Not authenticated');
 
-      const { error } = await supabase
-        .from('gmail_connections')
-        .update({ is_active: false })
-        .eq('user_id', user.id)
-        .eq('is_active', true);
-
-      if (error) throw error;
+      const result = await disconnectGmail(user.id);
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to disconnect');
+      }
 
       await loadSettings();
-      alert('Gmail disconnected successfully');
+      setToast({ type: 'success', message: 'Gmail disconnected successfully' });
+      setTimeout(() => setToast(null), 5000);
     } catch (error) {
       console.error('Failed to disconnect Gmail:', error);
-      alert('Failed to disconnect Gmail. Please try again.');
+      setToast({
+        type: 'error',
+        message: error instanceof Error ? error.message : 'Failed to disconnect Gmail',
+      });
     } finally {
       setDeleting(false);
     }
@@ -189,6 +205,30 @@ export function Settings() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {toast && (
+        <div className={`fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg max-w-md ${
+          toast.type === 'success' ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'
+        }`}>
+          <div className="flex items-start gap-3">
+            {toast.type === 'success' ? (
+              <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+            ) : (
+              <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+            )}
+            <p className={`text-sm ${
+              toast.type === 'success' ? 'text-green-800' : 'text-red-800'
+            }`}>{toast.message}</p>
+            <button
+              onClick={() => setToast(null)}
+              className={`ml-auto text-sm font-medium ${
+                toast.type === 'success' ? 'text-green-600 hover:text-green-800' : 'text-red-600 hover:text-red-800'
+              }`}
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
       <nav className="bg-white border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
@@ -242,19 +282,22 @@ export function Settings() {
                       )}
                     </div>
                   </div>
-                  <div className="flex gap-2">
+                  <p className="text-xs text-gray-500 mt-3">
+                    Only Gmail modify and basic identity scopes are requested. You can disconnect anytime.
+                  </p>
+                  <div className="flex gap-2 mt-4">
                     <Button
                       variant="outline"
-                      onClick={handleGmailConnect}
-                      disabled={deleting}
+                      onClick={handleGmailReconnect}
+                      disabled={deleting || reconnecting}
                     >
-                      <RefreshCw className="w-4 h-4 mr-2" />
+                      <RefreshCw className={`w-4 h-4 mr-2 ${reconnecting ? 'animate-spin' : ''}`} />
                       Reconnect Gmail
                     </Button>
                     <Button
                       variant="outline"
                       onClick={handleGmailDisconnect}
-                      disabled={deleting}
+                      disabled={deleting || reconnecting}
                       className="text-red-600 hover:text-red-700 hover:bg-red-50"
                     >
                       <XCircle className="w-4 h-4 mr-2" />
@@ -265,7 +308,10 @@ export function Settings() {
               ) : (
                 <div className="text-center py-8">
                   <Mail className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                  <p className="text-gray-500 mb-4">No Gmail account connected</p>
+                  <p className="text-gray-500 mb-2">No Gmail account connected</p>
+                  <p className="text-xs text-gray-400 mb-4">
+                    Only Gmail modify and basic identity scopes are requested. You can disconnect anytime.
+                  </p>
                   <Button onClick={handleGmailConnect}>
                     Connect Gmail
                   </Button>
