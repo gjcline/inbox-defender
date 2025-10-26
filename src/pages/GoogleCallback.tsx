@@ -167,7 +167,7 @@ export function GoogleCallback() {
       setMessage(`Successfully connected ${emailAddress}`);
 
       setTimeout(() => {
-        navigate('/settings?gmail_connected=true');
+        navigate('/dashboard?gmail_connected=1');
       }, 1500);
     } catch (error) {
       console.error('OAuth callback error:', error);
@@ -175,7 +175,7 @@ export function GoogleCallback() {
       setMessage(error instanceof Error ? error.message : 'Failed to connect Gmail');
 
       setTimeout(() => {
-        navigate('/settings?gmail_error=true');
+        navigate('/dashboard?gmail_error=1');
       }, 3000);
     }
   };

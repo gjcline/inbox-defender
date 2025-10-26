@@ -32,25 +32,17 @@ export function GmailConnect({ userId }: GmailConnectProps) {
     try {
       const { data: connectionData, error: connError } = await supabase
         .from('gmail_connections')
-        .select('is_active, mailbox_id, last_sync_at')
+        .select('is_active, email, last_sync_at')
         .eq('user_id', userId)
         .eq('is_active', true)
         .maybeSingle();
 
       if (connError) throw connError;
 
-      if (connectionData?.mailbox_id) {
-        const { data: mailboxData, error: mailboxError } = await supabase
-          .from('mailboxes')
-          .select('email_address')
-          .eq('id', connectionData.mailbox_id)
-          .maybeSingle();
-
-        if (mailboxError) throw mailboxError;
-
+      if (connectionData && connectionData.is_active) {
         setConnectionData({
           isConnected: true,
-          emailAddress: mailboxData?.email_address || '',
+          emailAddress: connectionData.email || '',
           lastSyncAt: connectionData.last_sync_at,
         });
       } else {

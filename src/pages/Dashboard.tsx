@@ -45,7 +45,7 @@ export function Dashboard() {
     const gmailConnected = searchParams.get('gmail_connected');
     const gmailError = searchParams.get('gmail_error');
 
-    if (gmailConnected === 'true') {
+    if (gmailConnected === 'true' || gmailConnected === '1') {
       setToastMessage('Gmail connected successfully! Syncing emails...');
       setShowToast(true);
       // Clear the param from URL

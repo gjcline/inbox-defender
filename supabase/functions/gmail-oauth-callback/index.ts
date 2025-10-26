@@ -236,7 +236,7 @@ Deno.serve(async (req: Request) => {
 
     // For GET requests (OAuth callback), redirect to dashboard
     if (req.method === "GET") {
-      const dashboardUrl = `${frontendUrl}/dashboard?gmail_connected=true`;
+      const dashboardUrl = `${frontendUrl}/dashboard?gmail_connected=1`;
       console.log("Redirecting to:", dashboardUrl);
       return new Response(null, {
         status: 302,
