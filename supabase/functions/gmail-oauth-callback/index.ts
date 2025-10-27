@@ -10,7 +10,6 @@ const corsHeaders = {
 interface OAuthCallbackRequest {
   code: string;
   userId: string;
-  redirectUri: string;
 }
 
 Deno.serve(async (req: Request) => {
@@ -34,6 +33,9 @@ Deno.serve(async (req: Request) => {
     const googleClientSecret = Deno.env.get("GOOGLE_CLIENT_SECRET")!;
     const frontendUrl = Deno.env.get("FRONTEND_URL") || "https://app.bliztic.com";
 
+    // Single source of truth for redirect URI
+    const REDIRECT_URI = Deno.env.get("GOOGLE_REDIRECT_URI") ?? "https://app.bliztic.com/api/auth/google/callback";
+
     console.log("Environment check:");
     console.log("- Supabase URL:", supabaseUrl ? "✓" : "✗");
     console.log("- Service Key:", supabaseServiceKey ? "✓" : "✗");
@@ -49,28 +51,25 @@ Deno.serve(async (req: Request) => {
 
     let code: string;
     let userId: string;
-    let redirectUri: string;
+
+    console.log("Using redirect URI:", REDIRECT_URI);
 
     // Handle both GET (from Google OAuth) and POST (legacy/testing)
     if (req.method === "GET") {
       console.log("Processing GET request (OAuth callback from Google)");
       code = requestUrl.searchParams.get("code") || "";
       userId = requestUrl.searchParams.get("state") || "";
-      redirectUri = `${requestUrl.origin}/functions/v1/gmail-oauth-callback`;
       console.log("Extracted from query params:");
       console.log("- Code:", code ? `${code.substring(0, 20)}...` : "missing");
       console.log("- User ID (state):", userId || "missing");
-      console.log("- Redirect URI:", redirectUri);
     } else if (req.method === "POST") {
       console.log("Processing POST request (legacy mode)");
       const body: OAuthCallbackRequest = await req.json();
       code = body.code;
       userId = body.userId;
-      redirectUri = body.redirectUri;
       console.log("Extracted from POST body:");
       console.log("- Code:", code ? `${code.substring(0, 20)}...` : "missing");
       console.log("- User ID:", userId || "missing");
-      console.log("- Redirect URI:", redirectUri);
     } else {
       throw new Error(`Unsupported method: ${req.method}`);
     }
@@ -90,15 +89,31 @@ Deno.serve(async (req: Request) => {
         code,
         client_id: googleClientId,
         client_secret: googleClientSecret,
-        redirect_uri: redirectUri,
+        redirect_uri: REDIRECT_URI,
         grant_type: "authorization_code",
       }),
     });
 
     if (!tokenResponse.ok) {
-      const errorData = await tokenResponse.text();
-      console.error("Token exchange failed:", errorData);
-      throw new Error("Failed to exchange authorization code");
+      const errTxt = await tokenResponse.text();
+      console.error("token_exchange_failed", {
+        status: tokenResponse.status,
+        body: errTxt,
+        redirect_uri: REDIRECT_URI,
+      });
+
+      // Return error response for frontend toast
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          reason: "token_exchange_failed",
+          detail: errTxt.slice(0, 500),
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
 
     const tokens = await tokenResponse.json();

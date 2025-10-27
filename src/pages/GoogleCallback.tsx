@@ -62,8 +62,15 @@ export function GoogleCallback() {
       });
 
       if (!tokenResponse.ok) {
-        const errorData = await tokenResponse.text();
+        const errorData = await tokenResponse.json().catch(() => ({ reason: 'unknown' }));
         console.error('Token exchange failed:', errorData);
+
+        // Handle token_exchange_failed from edge function
+        if (errorData.reason === 'token_exchange_failed') {
+          const firstLine = errorData.detail?.split('\n')[0] || 'Token exchange failed';
+          throw new Error(`OAuth Error: ${firstLine}`);
+        }
+
         throw new Error('Failed to exchange authorization code');
       }
 
