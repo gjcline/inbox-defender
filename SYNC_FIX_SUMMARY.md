@@ -1,186 +1,239 @@
-# Email Sync Fix - Implementation Summary
+# Gmail Sync Scheduler - Implementation Summary
 
-## Problem Identified
+## What Was Implemented
 
-Your automatic email syncing was failing because:
+### 1. pg_cron Scheduler (Migration: `20251027023307_enable_gmail_sync_scheduler.sql`)
 
-1. **The cron job was running** (every 15 minutes as scheduled)
-2. **But the trigger function was failing silently** - it couldn't properly call the edge function due to missing/incorrect environment variable configuration
-3. **Result**: Emails were only synced once manually, never automatically after that
+**Job Details:**
+- Name: `gmail-sync-15`
+- Schedule: `*/15 * * * *` (every 15 minutes)
+- Action: POSTs to edge function via pg_net with service role auth
 
-## What Was Fixed
-
-### 1. Fixed the Trigger Function
-
-**Before**: The `trigger_gmail_sync()` function tried to read environment variables that weren't available in the database context.
-
-**After**: Updated the function to use hardcoded Supabase URL and API key (stored securely in the database function).
-
-**File**: Database migration `fix_automated_sync_and_add_push_notifications.sql`
-
-### 2. Added Gmail Push Notification Infrastructure
-
-While we rely on the 15-minute polling for now, I've added the foundation for real-time push notifications:
-
-- **New table**: `gmail_push_logs` - tracks push notification events
-- **New columns** in `gmail_connections`:
-  - `gmail_watch_id` - stores the Gmail watch identifier
-  - `gmail_watch_expiration` - tracks when the watch expires
-  - `push_enabled` - indicates if push is active
-  - `push_endpoint` - the webhook URL for notifications
-
-- **New edge functions**:
-  - `gmail-push-notification` - receives notifications from Gmail
-  - `gmail-setup-watch` - sets up push notification watch
-  - `gmail-renew-watches` - automatically renews watches before expiry
-
-- **New cron job**: Runs every 6 days to renew Gmail watches before they expire
-
-### 3. Improved OAuth Flow
-
-Updated `gmail-oauth-callback` to automatically trigger an initial sync immediately after connecting Gmail. This ensures emails appear right away instead of waiting up to 15 minutes.
-
-### 4. Enhanced Dashboard UI
-
-- Added "Auto-sync Active" indicator with pulsing green dot
-- Added informational message explaining automatic sync behavior
-- Improved sync status display with better visual feedback
-
-## How It Works Now
-
-### Automatic Syncing (Every 15 Minutes)
-
-1. **Cron job runs**: Every 15 minutes, pg_cron executes `trigger_gmail_sync()`
-2. **Function calls edge function**: The trigger function makes an HTTP POST to `gmail-sync-cron`
-3. **Edge function syncs emails**: For each active connection, it:
-   - Fetches new emails from Gmail since last sync
-   - Stores them in the database
-   - Sends them to your Make.com webhook for AI classification
-   - Updates `last_sync_at` timestamp
-4. **Dashboard updates automatically**: Supabase Realtime pushes changes to the UI
-
-### Manual Syncing
-
-Users can click "Sync Now" at any time to immediately check for new emails without waiting for the next scheduled sync.
-
-### Initial Sync
-
-When a user connects their Gmail account, the system now automatically triggers an immediate sync so emails appear right away.
-
-## Verification
-
-### Check Cron Job Status
-
-Run this in Supabase SQL Editor:
-
+**Configuration Required:**
 ```sql
--- View cron job
-SELECT * FROM cron.job WHERE jobname = 'gmail-sync-every-15-minutes';
-
--- View recent executions
-SELECT status, return_message, start_time, end_time
-FROM cron.job_run_details
-WHERE jobid = (SELECT jobid FROM cron.job WHERE jobname = 'gmail-sync-every-15-minutes')
-ORDER BY start_time DESC
-LIMIT 10;
+-- Run once as superuser in SQL Editor:
+SELECT set_config('app.svc_key', '<YOUR_SERVICE_ROLE_KEY>', true);
+SELECT set_config('app.edge_url', 'https://bazeyxgsgodhnwckttxi.supabase.co', true);
 ```
 
-### Check Sync Status
+### 2. Token Refresh Logic (supabase/functions/gmail-sync-cron/index.ts)
 
+**Features:**
+- Checks token expiry before every Gmail API call
+- Refreshes if `token_expires_at` is within 2 minutes
+- Handles `invalid_grant` by marking connection `is_active=false`
+- Updates `gmail_connections` with new access_token and expiry
+- Never logs tokens (security)
+
+**Token Refresh Flow:**
+```
+1. Check: expiresAt - now <= 2 minutes?
+2. If yes → POST to https://oauth2.googleapis.com/token
+   - grant_type=refresh_token
+   - refresh_token from database
+   - GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET
+3. On success → Update gmail_connections
+4. On invalid_grant → Set is_active=false, skip mailbox
+```
+
+### 3. Advisory Lock (Lock ID: 851234)
+
+**Purpose:** Prevent overlapping sync runs
+
+**Implementation:**
+```typescript
+// At start
+const { data: lockAcquired } = await supabase.rpc('pg_try_advisory_lock', { key: 851234 });
+if (!lockAcquired) {
+  return { message: "Sync already in progress, skipped" };
+}
+
+// At end (success or error)
+await supabase.rpc('pg_advisory_unlock', { key: 851234 });
+```
+
+### 4. Observability - sync_history Table
+
+**Columns Used:**
+- `sync_started_at` - When sync began
+- `sync_completed_at` - When sync finished
+- `emails_fetched` - Total emails fetched
+- `emails_sent_to_webhook` - Total posted to webhook
+- `refreshed_tokens` - Count of tokens refreshed
+- `failures` - Count of failures
+- `status` - 'running', 'completed', or 'failed'
+- `error_message` - Error text if failed
+- `error_details` - JSON error details
+
+**Structured Log:**
+```json
+{
+  "event": "sync_complete",
+  "fetched": 10,
+  "posted": 10,
+  "refreshed": 1,
+  "failures": 0,
+  "duration_ms": 5432
+}
+```
+
+## Verification Commands
+
+### Check Cron Job Exists
 ```sql
--- View active connections and their last sync times
+SELECT * FROM cron.job WHERE jobname='gmail-sync-15';
+```
+
+**Expected output:**
+- jobname: `gmail-sync-15`
+- schedule: `*/15 * * * *`
+- command: `SELECT net.http_post(...)`
+
+### View Recent Job Runs
+```sql
+SELECT * FROM cron.job_run_details
+  WHERE jobid=(SELECT jobid FROM cron.job WHERE jobname='gmail-sync-15')
+  ORDER BY start_time DESC LIMIT 5;
+```
+
+### Check Sync History
+```sql
+-- Recent syncs
 SELECT
-  gc.user_id,
-  m.email_address,
-  gc.last_sync_at,
-  gc.created_at,
-  gc.is_active
-FROM gmail_connections gc
-LEFT JOIN mailboxes m ON gc.mailbox_id = m.id
-WHERE gc.is_active = true;
+  sync_started_at,
+  sync_completed_at,
+  status,
+  emails_fetched,
+  emails_sent_to_webhook,
+  refreshed_tokens,
+  failures
+FROM sync_history
+ORDER BY sync_started_at DESC
+LIMIT 10;
+
+-- Should show new row every 15 minutes
+SELECT COUNT(*) as syncs_last_hour
+FROM sync_history
+WHERE sync_started_at > NOW() - INTERVAL '1 hour';
+-- Expected: ~4 rows
 ```
 
-## What Happens Next
+### Check Token Refreshes
+```sql
+-- Syncs that refreshed tokens
+SELECT
+  sync_started_at,
+  refreshed_tokens,
+  emails_fetched
+FROM sync_history
+WHERE refreshed_tokens > 0
+ORDER BY sync_started_at DESC;
 
-### Immediate (Today)
+-- After 1 hour, should have some rows with refreshed_tokens > 0
+```
 
-1. **Wait 15 minutes** - The next cron job will run and sync new emails
-2. **Monitor the dashboard** - The "Last synced" timestamp should update every 15 minutes
-3. **Check email count** - New emails should appear in the "All Emails" table
+### Manual Trigger (Testing)
+```sql
+-- Trigger sync immediately without waiting 15 minutes
+SELECT net.http_post(
+  url := current_setting('app.edge_url', true) || '/functions/v1/gmail-sync-cron',
+  headers := jsonb_build_object('Authorization', 'Bearer ' || current_setting('app.svc_key', true)),
+  timeout_milliseconds := 25000
+);
+```
 
-### If You Have New Emails
+## Acceptance Criteria
 
-1. Send yourself a test email to jackson@bliztic.com
-2. Wait up to 15 minutes (or click "Sync Now")
-3. The email should appear in your dashboard
-4. If you have Make.com configured, it will be sent for AI classification
+✅ **Cron job exists:**
+```sql
+SELECT COUNT(*) FROM cron.job WHERE jobname='gmail-sync-15';
+-- Should return 1
+```
 
-## Future Enhancement: Real-Time Push Notifications
+✅ **sync_history gets new rows every 15 minutes:**
+```sql
+SELECT COUNT(*) FROM sync_history
+WHERE sync_started_at > NOW() - INTERVAL '1 hour';
+-- Should be ~4 after 1 hour
+```
 
-The infrastructure is in place for instant email detection via Gmail push notifications. To enable this, you would need to:
+✅ **Tokens refresh automatically:**
+```sql
+SELECT SUM(refreshed_tokens) FROM sync_history
+WHERE sync_started_at > NOW() - INTERVAL '2 hours';
+-- Should be > 0 after tokens expire (1 hour)
+```
 
-1. **Create Google Cloud Pub/Sub topic**:
-   - Go to Google Cloud Console
-   - Enable Cloud Pub/Sub API
-   - Create a topic (e.g., `gmail-notifications`)
-   - Create a push subscription pointing to your edge function
+✅ **Sync continues working after 1 hour:**
+- Initial OAuth gives token valid for ~1 hour
+- After 1 hour, sync should auto-refresh tokens
+- Gmail API calls should succeed without manual reconnection
+- Check: No "invalid_grant" errors unless user actually revoked access
 
-2. **Update the edge function** to register Gmail watches with the Pub/Sub topic
+## Setup Checklist
 
-3. **Benefits**:
-   - Emails appear within 1-2 seconds instead of up to 15 minutes
-   - More efficient (no unnecessary API calls when no new emails)
-   - Better user experience
-
-**For now, the 15-minute polling works reliably and requires no additional setup.**
+- [ ] Migration applied (`20251027023307_enable_gmail_sync_scheduler.sql`)
+- [ ] Config set in database:
+  ```sql
+  SELECT set_config('app.svc_key', '<SERVICE_ROLE_KEY>', true);
+  SELECT set_config('app.edge_url', '<SUPABASE_URL>', true);
+  ```
+- [ ] Edge function deployed with updated code
+- [ ] Verify cron job exists: `SELECT * FROM cron.job WHERE jobname='gmail-sync-15';`
+- [ ] Test manual trigger and check sync_history
+- [ ] Monitor for 1+ hour to verify token refresh works
 
 ## Troubleshooting
 
-### Emails Not Syncing After 15 Minutes
+### Cron job not running
 
-1. Check cron execution logs (query above)
-2. Check Supabase Function Logs for `gmail-sync-cron`
-3. Verify Gmail OAuth token hasn't expired
-4. Click "Sync Now" to test manually
+**Check config:**
+```sql
+SELECT current_setting('app.svc_key', true) as svc_key,
+       current_setting('app.edge_url', true) as edge_url;
+```
 
-### "Last synced" Shows Old Date
+If NULL, run setup again.
 
-This could mean:
-- The cron job is running but finding no new emails (normal)
-- The Gmail API call is failing (check function logs)
-- The access token needs refresh (reconnect Gmail if needed)
+**Check job logs:**
+```sql
+SELECT * FROM cron.job_run_details
+WHERE jobid=(SELECT jobid FROM cron.job WHERE jobname='gmail-sync-15')
+ORDER BY start_time DESC;
+```
 
-### Manual Sync Works But Auto Doesn't
+### Token refresh failing
 
-- Verify the cron job is active: `SELECT * FROM cron.job`
-- Check recent executions for errors
-- The fix applied should resolve this issue
+**Check edge function logs** in Supabase Dashboard → Edge Functions → gmail-sync-cron → Logs
 
-## Technical Details
+Look for:
+- `Refreshing token for connection...`
+- `Token refreshed successfully...`
+- `Token refresh failed...`
 
-### Database Changes
+**Verify OAuth credentials:**
+- GOOGLE_CLIENT_ID set in edge function env
+- GOOGLE_CLIENT_SECRET set in edge function env
 
-- **Modified table**: `gmail_connections` - added push notification columns
-- **New table**: `gmail_push_logs` - tracks push events
-- **Updated function**: `trigger_gmail_sync()` - fixed to use correct credentials
-- **New function**: `renew_expiring_gmail_watches()` - auto-renews watches
-- **New cron job**: Runs every 6 days for watch renewal
+### Advisory lock stuck
 
-### Edge Functions Deployed
+If lock is stuck (shouldn't happen with proper error handling):
+```sql
+-- Release all advisory locks (use with caution)
+SELECT pg_advisory_unlock_all();
+```
 
-1. `gmail-oauth-callback` - handles OAuth flow + triggers initial sync
-2. `gmail-sync-cron` - fetches and processes new emails (unchanged)
-3. `gmail-push-notification` - receives Gmail push events (new)
-4. `gmail-setup-watch` - sets up push watches (new)
-5. `gmail-renew-watches` - renews expiring watches (new)
+## Default Make.com Webhook
 
-### Frontend Changes
+If `make_webhook_url` is NULL in `gmail_connections`:
+```
+https://hook.us2.make.com/qd1axtiygb3ivkcrgqqke0phfof2mcj7
+```
 
-- `SyncStatus.tsx` - added auto-sync indicator
-- `GmailConnect.tsx` - added informational message
+## Security Notes
 
-## Summary
-
-Your automatic email syncing is now **fully functional**. The system will check for new emails every 15 minutes automatically, and the dashboard will update in real-time when new emails are found. The infrastructure is also in place for future real-time push notifications if you want instant email detection.
-
-The key fix was updating the database trigger function to properly call the edge function with the correct authentication credentials.
+- Never log access_token or refresh_token
+- Service role key stored in superuser-local GUC
+- Config not returned to clients
+- Advisory lock prevents concurrent runs
+- Token refresh errors logged without sensitive data

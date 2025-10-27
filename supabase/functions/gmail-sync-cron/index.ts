@@ -187,6 +187,22 @@ Deno.serve(async (req: Request) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+    // Advisory lock to prevent overlapping runs
+    const { data: lockAcquired } = await supabase.rpc('pg_try_advisory_lock', { key: 851234 });
+
+    if (!lockAcquired) {
+      console.log("Another sync is already running, skipping this execution");
+      return new Response(
+        JSON.stringify({ message: "Sync already in progress, skipped" }),
+        {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    console.log("Advisory lock acquired, starting sync");
+
     // Create sync history entry
     // Note: Using first connection's user_id and gmail_connection_id, or null if no connections
     const { data: syncHistory, error: syncHistoryError } = await supabase
@@ -525,6 +541,10 @@ Deno.serve(async (req: Request) => {
       duration_ms: Date.now() - syncStartTime.getTime(),
     }));
 
+    // Release advisory lock
+    await supabase.rpc('pg_advisory_unlock', { key: 851234 });
+    console.log("Advisory lock released");
+
     return new Response(
       JSON.stringify({
         success: true,
@@ -565,6 +585,17 @@ Deno.serve(async (req: Request) => {
       } catch (updateError) {
         console.error("Failed to update sync history:", updateError);
       }
+    }
+
+    // Release advisory lock on error
+    try {
+      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+      const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+      const supabase = createClient(supabaseUrl, supabaseServiceKey);
+      await supabase.rpc('pg_advisory_unlock', { key: 851234 });
+      console.log("Advisory lock released after error");
+    } catch (unlockError) {
+      console.error("Failed to release advisory lock:", unlockError);
     }
 
     return new Response(
