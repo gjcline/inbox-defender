@@ -8,6 +8,7 @@ const corsHeaders = {
 };
 
 const DEFAULT_MAKE_WEBHOOK = "https://hook.us2.make.com/qd1axtiygb3ivkcrgqqke0phfof2mcj7";
+const ADVISORY_LOCK_KEY = 851234;
 
 interface GmailMessage {
   id: string;
@@ -25,6 +26,7 @@ interface TokenRefreshResult {
   accessToken?: string;
   expiresAt?: string;
   error?: string;
+  requiresReconnect?: boolean;
 }
 
 async function refreshAccessToken(
@@ -32,7 +34,7 @@ async function refreshAccessToken(
   supabase: any
 ): Promise<TokenRefreshResult> {
   try {
-    console.log(`Refreshing token for connection ${connection.id}`);
+    console.log(`[${connection.id}] Refreshing token`);
 
     const clientId = Deno.env.get("GOOGLE_CLIENT_ID");
     const clientSecret = Deno.env.get("GOOGLE_CLIENT_SECRET");
@@ -66,10 +68,11 @@ async function refreshAccessToken(
 
     if (!tokenResponse.ok) {
       const errorText = await tokenResponse.text();
-      console.error(`Token refresh failed for ${connection.id}:`, errorText);
+      console.error(`[${connection.id}] Token refresh failed:`, errorText);
 
       // Check for invalid_grant error (user revoked access)
       if (errorText.includes("invalid_grant")) {
+        console.log(`[${connection.id}] invalid_grant - marking for reconnect`);
         await supabase
           .from("gmail_connections")
           .update({
@@ -81,7 +84,8 @@ async function refreshAccessToken(
 
         return {
           success: false,
-          error: "invalid_grant - connection marked for reconnect",
+          error: "invalid_grant",
+          requiresReconnect: true,
         };
       }
 
@@ -107,21 +111,21 @@ async function refreshAccessToken(
       .eq("id", connection.id);
 
     if (updateError) {
-      console.error("Failed to update token:", updateError);
+      console.error(`[${connection.id}] Failed to update token:`, updateError);
       return {
         success: false,
         error: "Failed to save refreshed token",
       };
     }
 
-    console.log(`Token refreshed successfully for ${connection.id}`);
+    console.log(`[${connection.id}] Token refreshed successfully`);
     return {
       success: true,
       accessToken: access_token,
       expiresAt: newExpiresAt,
     };
   } catch (error) {
-    console.error("Error refreshing token:", error);
+    console.error(`[${connection.id}] Error refreshing token:`, error);
     return {
       success: false,
       error: error instanceof Error ? error.message : "Unknown error",
@@ -132,7 +136,7 @@ async function refreshAccessToken(
 async function ensureValidToken(
   connection: any,
   supabase: any
-): Promise<{ success: boolean; accessToken?: string; error?: string; refreshed?: boolean }> {
+): Promise<{ success: boolean; accessToken?: string; error?: string; refreshed?: boolean; requiresReconnect?: boolean }> {
   try {
     const expiresAt = new Date(connection.token_expires_at);
     const now = new Date();
@@ -147,6 +151,8 @@ async function ensureValidToken(
       };
     }
 
+    console.log(`[${connection.id}] Token expires soon, refreshing...`);
+
     // Token expires soon or already expired, refresh it
     const refreshResult = await refreshAccessToken(connection, supabase);
     if (!refreshResult.success) {
@@ -154,6 +160,7 @@ async function ensureValidToken(
         success: false,
         error: refreshResult.error,
         refreshed: false,
+        requiresReconnect: refreshResult.requiresReconnect,
       };
     }
 
@@ -181,17 +188,21 @@ Deno.serve(async (req: Request) => {
 
   const syncStartTime = new Date();
   let syncHistoryId: string | null = null;
+  let lockAcquired = false;
+
+  // Create Supabase client with service role (bypasses RLS)
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+    global: { headers: { "x-application-name": "gmail-sync-cron" } },
+  });
 
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
     // Advisory lock to prevent overlapping runs
-    const { data: lockAcquired } = await supabase.rpc('pg_try_advisory_lock', { key: 851234 });
+    const { data: tryLock } = await supabase.rpc("pg_try_advisory_lock", { key: ADVISORY_LOCK_KEY });
 
-    if (!lockAcquired) {
-      console.log("Another sync is already running, skipping this execution");
+    if (!tryLock) {
+      console.log("sync_skip: another sync is already running");
       return new Response(
         JSON.stringify({ message: "Sync already in progress, skipped" }),
         {
@@ -201,47 +212,58 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    lockAcquired = true;
     console.log("Advisory lock acquired, starting sync");
 
-    // Create sync history entry
-    // Note: Using first connection's user_id and gmail_connection_id, or null if no connections
+    // Create sync_history row at start
     const { data: syncHistory, error: syncHistoryError } = await supabase
       .from("sync_history")
       .insert({
         sync_started_at: syncStartTime.toISOString(),
         status: "running",
-        user_id: null, // Will be set if we have connections
+        user_id: null,
         gmail_connection_id: null,
+        emails_fetched: 0,
+        emails_sent_to_webhook: 0,
+        refreshed_tokens: 0,
+        failures: 0,
       })
       .select("id")
       .single();
 
-    if (!syncHistoryError && syncHistory) {
-      syncHistoryId = syncHistory.id;
+    if (syncHistoryError || !syncHistory) {
+      console.error("Failed to create sync_history row:", syncHistoryError);
+      throw new Error("Failed to create sync history");
     }
 
+    syncHistoryId = syncHistory.id;
+    console.log(`Sync started, history ID: ${syncHistoryId}`);
+
+    // Fetch active connections
     const { data: connections, error: connectionsError } = await supabase
       .from("gmail_connections")
       .select("*")
       .eq("is_active", true);
 
-    if (connectionsError) throw connectionsError;
+    if (connectionsError) {
+      throw connectionsError;
+    }
 
+    // Guard: no active connections
     if (!connections || connections.length === 0) {
-      // Update sync history
-      if (syncHistoryId) {
-        await supabase
-          .from("sync_history")
-          .update({
-            sync_completed_at: new Date().toISOString(),
-            status: "completed",
-            emails_fetched: 0,
-            emails_sent_to_webhook: 0,
-            refreshed_tokens: 0,
-            failures: 0,
-          })
-          .eq("id", syncHistoryId);
-      }
+      console.log("no_active_connections: completing sync with zero counts");
+
+      await supabase
+        .from("sync_history")
+        .update({
+          sync_completed_at: new Date().toISOString(),
+          status: "completed",
+          emails_fetched: 0,
+          emails_sent_to_webhook: 0,
+          refreshed_tokens: 0,
+          failures: 0,
+        })
+        .eq("id", syncHistoryId);
 
       return new Response(
         JSON.stringify({ message: "No active connections to sync" }),
@@ -252,6 +274,8 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    console.log(`Found ${connections.length} active connection(s)`);
+
     const results = [];
     let totalFetched = 0;
     let totalPosted = 0;
@@ -260,49 +284,55 @@ Deno.serve(async (req: Request) => {
 
     for (const connection of connections) {
       try {
+        console.log(`[${connection.id}] Processing connection for user ${connection.user_id}`);
+
         // Ensure token is valid before making Gmail API calls
         const tokenResult = await ensureValidToken(connection, supabase);
 
         if (!tokenResult.success) {
-          console.error(`Token validation failed for ${connection.id}:`, tokenResult.error);
+          console.error(`[${connection.id}] Token validation failed:`, tokenResult.error);
+
+          if (tokenResult.requiresReconnect) {
+            console.log(`[${connection.id}] Requires reconnect, skipping`);
+          }
+
           totalFailures++;
           results.push({
             user_id: connection.user_id,
+            connection_id: connection.id,
             error: `Token validation failed: ${tokenResult.error}`,
+            requires_reconnect: tokenResult.requiresReconnect || false,
           });
           continue;
         }
 
         if (tokenResult.refreshed) {
+          console.log(`[${connection.id}] Token refreshed`);
           totalRefreshed++;
         }
 
         const accessToken = tokenResult.accessToken!;
 
-        // On first sync, fetch from 30 days ago to catch recent history
-        // On subsequent syncs, fetch from last sync timestamp with 5-minute buffer
+        // Determine sync date range
         const lastSyncDate = connection.last_sync_at
           ? new Date(connection.last_sync_at)
           : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
-        // Subtract 5 minutes buffer to prevent missing emails from edge cases
         const bufferMs = 5 * 60 * 1000;
         const queryDate = new Date(lastSyncDate.getTime() - bufferMs);
 
-        // Format date as YYYY/MM/DD for Gmail API (more reliable than Unix timestamp)
         const year = queryDate.getFullYear();
-        const month = String(queryDate.getMonth() + 1).padStart(2, '0');
-        const day = String(queryDate.getDate()).padStart(2, '0');
+        const month = String(queryDate.getMonth() + 1).padStart(2, "0");
+        const day = String(queryDate.getDate()).padStart(2, "0");
         const afterDate = `${year}/${month}/${day}`;
 
         const isFirstSync = !connection.last_sync_at;
-
-        // Fetch more emails on first sync to catch up on history
         const maxResults = isFirstSync ? 500 : 100;
 
         const gmailQuery = `after:${afterDate} in:inbox`;
-        console.log(`Syncing for user ${connection.user_id}: query="${gmailQuery}", maxResults=${maxResults}`);
+        console.log(`[${connection.id}] Query: "${gmailQuery}", maxResults: ${maxResults}`);
 
+        // Fetch messages from Gmail
         const gmailResponse = await fetch(
           `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(gmailQuery)}&maxResults=${maxResults}`,
           {
@@ -313,7 +343,8 @@ Deno.serve(async (req: Request) => {
         );
 
         if (!gmailResponse.ok) {
-          console.error(`Gmail API error for user ${connection.user_id}:`, await gmailResponse.text());
+          const errorText = await gmailResponse.text();
+          console.error(`[${connection.id}] Gmail API error:`, errorText);
           totalFailures++;
           continue;
         }
@@ -321,13 +352,19 @@ Deno.serve(async (req: Request) => {
         const gmailData = await gmailResponse.json();
         const messageIds = gmailData.messages || [];
 
+        console.log(`[${connection.id}] Found ${messageIds.length} message(s)`);
+
         if (messageIds.length === 0) {
           await supabase
             .from("gmail_connections")
             .update({ last_sync_at: new Date().toISOString() })
             .eq("id", connection.id);
 
-          results.push({ user_id: connection.user_id, new_emails: 0 });
+          results.push({
+            user_id: connection.user_id,
+            connection_id: connection.id,
+            new_emails: 0,
+          });
           continue;
         }
 
@@ -348,9 +385,8 @@ Deno.serve(async (req: Request) => {
             const message: GmailMessage = await msgResponse.json();
             const headers = message.payload.headers;
 
-            const from = headers.find(h => h.name.toLowerCase() === "from")?.value || "";
-            const subject = headers.find(h => h.name.toLowerCase() === "subject")?.value || "";
-            const date = headers.find(h => h.name.toLowerCase() === "date")?.value || "";
+            const from = headers.find((h) => h.name.toLowerCase() === "from")?.value || "";
+            const subject = headers.find((h) => h.name.toLowerCase() === "subject")?.value || "";
 
             const senderEmail = from.match(/<(.+?)>/)?.[1] || from;
             const senderName = from.replace(/<.+?>/, "").trim().replace(/"/g, "");
@@ -396,12 +432,12 @@ Deno.serve(async (req: Request) => {
               .maybeSingle();
 
             if (insertError && !insertError.message.includes("duplicate")) {
-              console.error("Error inserting email:", insertError);
-            } else {
+              console.error(`[${connection.id}] Error inserting email:`, insertError);
+            } else if (!insertError) {
               emailsProcessed++;
             }
 
-            // Always add email to webhook payload (send ALL emails)
+            // Add to webhook payload
             emailDetails.push({
               message_id: message.id,
               thread_id: message.threadId,
@@ -445,7 +481,7 @@ Deno.serve(async (req: Request) => {
                   .eq("user_id", connection.user_id)
                   .eq("email_address", senderEmail);
               } catch (labelError) {
-                console.error("Error applying label:", labelError);
+                console.error(`[${connection.id}] Error applying label:`, labelError);
               }
             }
           }
@@ -453,8 +489,7 @@ Deno.serve(async (req: Request) => {
 
         totalFetched += emailsProcessed;
 
-        // Send ALL emails to webhook for AI classification
-        // Use connection's webhook URL or default
+        // Send to webhook
         const webhookUrl = connection.make_webhook_url || DEFAULT_MAKE_WEBHOOK;
         let webhookSent = false;
 
@@ -484,12 +519,14 @@ Deno.serve(async (req: Request) => {
             webhookSent = webhookResponse.ok;
             if (webhookResponse.ok) {
               totalPosted += emailDetails.length;
+              console.log(`[${connection.id}] Posted ${emailDetails.length} emails to webhook`);
             } else {
-              console.error("Webhook returned error:", await webhookResponse.text());
+              const errorText = await webhookResponse.text();
+              console.error(`[${connection.id}] Webhook error:`, errorText);
               totalFailures++;
             }
           } catch (webhookError) {
-            console.error("Error sending to webhook:", webhookError);
+            console.error(`[${connection.id}] Webhook exception:`, webhookError);
             totalFailures++;
           }
         }
@@ -501,49 +538,47 @@ Deno.serve(async (req: Request) => {
 
         results.push({
           user_id: connection.user_id,
+          connection_id: connection.id,
           new_emails: messageIds.length,
           webhook_sent: webhookSent,
           is_first_sync: isFirstSync,
           token_refreshed: tokenResult.refreshed,
         });
       } catch (error) {
-        console.error(`Error processing connection ${connection.id}:`, error);
+        console.error(`[${connection.id}] Error processing connection:`, error);
         totalFailures++;
         results.push({
           user_id: connection.user_id,
+          connection_id: connection.id,
           error: error instanceof Error ? error.message : "Unknown error",
         });
       }
     }
 
     // Update sync history with final counts
-    if (syncHistoryId) {
-      await supabase
-        .from("sync_history")
-        .update({
-          sync_completed_at: new Date().toISOString(),
-          status: "completed",
-          emails_fetched: totalFetched,
-          emails_sent_to_webhook: totalPosted,
-          refreshed_tokens: totalRefreshed,
-          failures: totalFailures,
-        })
-        .eq("id", syncHistoryId);
-    }
+    await supabase
+      .from("sync_history")
+      .update({
+        sync_completed_at: new Date().toISOString(),
+        status: "completed",
+        emails_fetched: totalFetched,
+        emails_sent_to_webhook: totalPosted,
+        refreshed_tokens: totalRefreshed,
+        failures: totalFailures,
+      })
+      .eq("id", syncHistoryId);
 
     // Structured log for observability
-    console.log(JSON.stringify({
-      event: "sync_complete",
-      fetched: totalFetched,
-      posted: totalPosted,
-      refreshed: totalRefreshed,
-      failures: totalFailures,
-      duration_ms: Date.now() - syncStartTime.getTime(),
-    }));
-
-    // Release advisory lock
-    await supabase.rpc('pg_advisory_unlock', { key: 851234 });
-    console.log("Advisory lock released");
+    console.log(
+      JSON.stringify({
+        event: "sync_complete",
+        fetched: totalFetched,
+        posted: totalPosted,
+        refreshed: totalRefreshed,
+        failures: totalFailures,
+        duration_ms: Date.now() - syncStartTime.getTime(),
+      })
+    );
 
     return new Response(
       JSON.stringify({
@@ -561,21 +596,21 @@ Deno.serve(async (req: Request) => {
       }
     );
   } catch (error) {
-    console.error("Error in gmail-sync-cron:", error);
+    console.error("sync_failed", {
+      message: String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    });
 
-    // Update sync history with error
+    // Update sync_history to error state
     if (syncHistoryId) {
       try {
-        const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-        const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-        const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
         await supabase
           .from("sync_history")
           .update({
             sync_completed_at: new Date().toISOString(),
-            status: "failed",
+            status: "error",
             error_message: error instanceof Error ? error.message : "Unknown error",
+            failures: 1,
             error_details: {
               message: error instanceof Error ? error.message : "Unknown error",
               stack: error instanceof Error ? error.stack : undefined,
@@ -583,27 +618,29 @@ Deno.serve(async (req: Request) => {
           })
           .eq("id", syncHistoryId);
       } catch (updateError) {
-        console.error("Failed to update sync history:", updateError);
+        console.error("Failed to update sync_history:", updateError);
       }
     }
 
-    // Release advisory lock on error
-    try {
-      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-      const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-      const supabase = createClient(supabaseUrl, supabaseServiceKey);
-      await supabase.rpc('pg_advisory_unlock', { key: 851234 });
-      console.log("Advisory lock released after error");
-    } catch (unlockError) {
-      console.error("Failed to release advisory lock:", unlockError);
-    }
-
     return new Response(
-      JSON.stringify({ error: "Internal server error", details: error instanceof Error ? error.message : "Unknown error" }),
+      JSON.stringify({
+        error: "Internal server error",
+        details: error instanceof Error ? error.message : "Unknown error",
+      }),
       {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       }
     );
+  } finally {
+    // Always release advisory lock
+    if (lockAcquired) {
+      try {
+        await supabase.rpc("pg_advisory_unlock", { key: ADVISORY_LOCK_KEY });
+        console.log("Advisory lock released");
+      } catch (unlockError) {
+        console.error("Failed to release advisory lock:", unlockError);
+      }
+    }
   }
 });
