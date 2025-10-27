@@ -22,6 +22,12 @@ interface ConnectionStatus {
   connectionId?: string;
 }
 
+interface ServerConfig {
+  client_id_suffix: string;
+  redirect_uri: string;
+  timestamp: string;
+}
+
 export function OAuthDiagnostics() {
   const { user } = useAuth();
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>({ isConnected: false });
@@ -30,10 +36,35 @@ export function OAuthDiagnostics() {
   const [testingProfile, setTestingProfile] = useState(false);
   const [testingLabels, setTestingLabels] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [serverConfig, setServerConfig] = useState<ServerConfig | null>(null);
+  const [loadingServerConfig, setLoadingServerConfig] = useState(true);
 
   useEffect(() => {
     loadConnectionStatus();
+    loadServerConfig();
   }, [user]);
+
+  const loadServerConfig = async () => {
+    try {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const response = await fetch(`${supabaseUrl}/functions/v1/debug-env`, {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setServerConfig(data);
+      } else {
+        console.error('Failed to load server config:', await response.text());
+      }
+    } catch (error) {
+      console.error('Error loading server config:', error);
+    } finally {
+      setLoadingServerConfig(false);
+    }
+  };
 
   const loadConnectionStatus = async () => {
     if (!user) return;
@@ -169,7 +200,16 @@ export function OAuthDiagnostics() {
     return `...${clientId.slice(-4)}`;
   };
 
+  const getClientIdSuffix = (clientId: string): string => {
+    if (!clientId) return '';
+    return clientId.split('-')[0].slice(-8);
+  };
+
   const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
+  const frontendSuffix = getClientIdSuffix(clientId);
+  const serverSuffix = serverConfig?.client_id_suffix || '';
+  const suffixesMatch = frontendSuffix && serverSuffix && frontendSuffix === serverSuffix;
+  const redirectUrisMatch = serverConfig && GOOGLE_REDIRECT_URI === serverConfig.redirect_uri;
   const minutesUntilExpiry = getTimeUntilExpiry();
 
   let previewAuthUrl = '';
@@ -224,25 +264,149 @@ export function OAuthDiagnostics() {
           <div className="bg-white rounded-lg shadow">
             <div className="px-6 py-4 border-b border-gray-200">
               <h2 className="text-lg font-semibold text-gray-900">OAuth Configuration</h2>
+              <p className="text-sm text-gray-600 mt-1">Compare frontend and backend configuration</p>
             </div>
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Google Client ID
-                </label>
-                <code className="block px-3 py-2 bg-gray-50 border border-gray-200 rounded text-sm text-gray-600 font-mono">
-                  {maskClientId(clientId)}
-                </code>
+            <div className="p-6 space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Frontend Client ID Suffix
+                  </label>
+                  <div className={`px-4 py-3 rounded-lg border-2 ${
+                    loadingServerConfig
+                      ? 'bg-gray-50 border-gray-200'
+                      : suffixesMatch
+                      ? 'bg-green-50 border-green-500'
+                      : 'bg-red-50 border-red-500'
+                  }`}>
+                    <code className={`block text-lg font-bold font-mono ${
+                      loadingServerConfig
+                        ? 'text-gray-600'
+                        : suffixesMatch
+                        ? 'text-green-700'
+                        : 'text-red-700'
+                    }`}>
+                      {frontendSuffix || 'Not configured'}
+                    </code>
+                    <p className="text-xs text-gray-600 mt-1">
+                      From: VITE_GOOGLE_CLIENT_ID
+                    </p>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Backend Client ID Suffix
+                  </label>
+                  <div className={`px-4 py-3 rounded-lg border-2 ${
+                    loadingServerConfig
+                      ? 'bg-gray-50 border-gray-200'
+                      : suffixesMatch
+                      ? 'bg-green-50 border-green-500'
+                      : 'bg-red-50 border-red-500'
+                  }`}>
+                    {loadingServerConfig ? (
+                      <div className="flex items-center gap-2">
+                        <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div>
+                        <span className="text-sm text-gray-600">Loading...</span>
+                      </div>
+                    ) : (
+                      <>
+                        <code className={`block text-lg font-bold font-mono ${
+                          suffixesMatch ? 'text-green-700' : 'text-red-700'
+                        }`}>
+                          {serverSuffix || 'Not configured'}
+                        </code>
+                        <p className="text-xs text-gray-600 mt-1">
+                          From: GOOGLE_CLIENT_ID (edge function)
+                        </p>
+                      </>
+                    )}
+                  </div>
+                </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+
+              {!loadingServerConfig && (
+                <div className={`flex items-start gap-3 p-4 rounded-lg border-2 ${
+                  suffixesMatch
+                    ? 'bg-green-50 border-green-500'
+                    : 'bg-red-50 border-red-500'
+                }`}>
+                  {suffixesMatch ? (
+                    <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+                  ) : (
+                    <XCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                  )}
+                  <div>
+                    <p className={`font-semibold ${
+                      suffixesMatch ? 'text-green-900' : 'text-red-900'
+                    }`}>
+                      {suffixesMatch
+                        ? 'Client IDs Match'
+                        : 'Client ID Mismatch Detected'}
+                    </p>
+                    <p className={`text-sm mt-1 ${
+                      suffixesMatch ? 'text-green-700' : 'text-red-700'
+                    }`}>
+                      {suffixesMatch
+                        ? 'Frontend and backend are using the same Google Client ID'
+                        : 'Frontend and backend are using different Client IDs. OAuth will fail.'}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              <div className="border-t border-gray-200 pt-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
                   Redirect URI
                 </label>
-                <code className="block px-3 py-2 bg-gray-50 border border-gray-200 rounded text-sm text-gray-600 font-mono break-all">
-                  {GOOGLE_REDIRECT_URI}
-                </code>
+                <div className="grid grid-cols-1 gap-3">
+                  <div>
+                    <p className="text-xs text-gray-600 mb-1">Frontend:</p>
+                    <code className={`block px-3 py-2 rounded border ${
+                      loadingServerConfig
+                        ? 'bg-gray-50 border-gray-200'
+                        : redirectUrisMatch
+                        ? 'bg-green-50 border-green-500'
+                        : 'bg-red-50 border-red-500'
+                    } text-sm font-mono break-all`}>
+                      {GOOGLE_REDIRECT_URI}
+                    </code>
+                  </div>
+                  {!loadingServerConfig && serverConfig && (
+                    <div>
+                      <p className="text-xs text-gray-600 mb-1">Backend:</p>
+                      <code className={`block px-3 py-2 rounded border ${
+                        redirectUrisMatch
+                          ? 'bg-green-50 border-green-500'
+                          : 'bg-red-50 border-red-500'
+                      } text-sm font-mono break-all`}>
+                        {serverConfig.redirect_uri}
+                      </code>
+                    </div>
+                  )}
+                </div>
+                {!loadingServerConfig && (
+                  <div className={`flex items-start gap-2 mt-3 p-3 rounded-lg ${
+                    redirectUrisMatch
+                      ? 'bg-green-50 text-green-700'
+                      : 'bg-red-50 text-red-700'
+                  }`}>
+                    {redirectUrisMatch ? (
+                      <CheckCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                    ) : (
+                      <XCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                    )}
+                    <p className="text-sm">
+                      {redirectUrisMatch
+                        ? 'Redirect URIs match'
+                        : 'Redirect URIs do not match'}
+                    </p>
+                  </div>
+                )}
               </div>
-              <div>
+
+              <div className="border-t border-gray-200 pt-4">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   OAuth Scopes
                 </label>
@@ -250,15 +414,16 @@ export function OAuthDiagnostics() {
                   {OAUTH_SCOPES}
                 </code>
               </div>
-              <div>
+
+              <div className="border-t border-gray-200 pt-4">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Preview OAuth URL
                 </label>
-                <code className="block px-3 py-2 bg-gray-50 border border-gray-200 rounded text-xs text-gray-600 font-mono break-all overflow-x-auto">
+                <code className="block px-3 py-2 bg-gray-50 border border-gray-200 rounded text-xs text-gray-600 font-mono break-all overflow-x-auto max-h-32">
                   {previewAuthUrl || 'Failed to generate - check console'}
                 </code>
                 <p className="text-xs text-gray-500 mt-1">
-                  This is the exact URL that buildAuthUrl generates (with state=diagnostics-test)
+                  This is the exact URL that buildAuthUrl generates (with test state)
                 </p>
               </div>
             </div>
