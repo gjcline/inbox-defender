@@ -14,6 +14,7 @@ import { Toast } from '../components/dashboard/Toast';
 import { GmailConnect } from '../components/dashboard/GmailConnect';
 import { MakeWebhookConfig } from '../components/dashboard/MakeWebhookConfig';
 import { SyncStatus } from '../components/dashboard/SyncStatus';
+import { SyncHistory } from '../components/dashboard/SyncHistory';
 
 export function Dashboard() {
   const navigate = useNavigate();
@@ -427,6 +428,7 @@ export function Dashboard() {
             isSyncing={syncing}
           />
         )}
+        {user && <SyncHistory />}
 
         <KpiCards
           blockedThisWeek={blockedThisWeek}

@@ -489,45 +489,109 @@ Deno.serve(async (req: Request) => {
 
         totalFetched += emailsProcessed;
 
-        // Send to webhook
+        // Send to webhook in batches of 25
         const webhookUrl = connection.make_webhook_url || DEFAULT_MAKE_WEBHOOK;
         let webhookSent = false;
+        const BATCH_SIZE = 25;
 
         if (emailDetails.length > 0) {
-          const webhookPayload = {
-            user_id: connection.user_id,
-            gmail_connection_id: connection.id,
-            user_email: connection.email || "",
-            access_token: accessToken,
-            emails: emailDetails,
-            sync_info: {
-              is_first_sync: isFirstSync,
-              total_emails: emailDetails.length,
-              sync_timestamp: new Date().toISOString(),
-            },
-          };
+          const batches = [];
+          for (let i = 0; i < emailDetails.length; i += BATCH_SIZE) {
+            batches.push(emailDetails.slice(i, i + BATCH_SIZE));
+          }
 
-          try {
-            const webhookResponse = await fetch(webhookUrl, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
+          console.log(`[${connection.id}] Sending ${emailDetails.length} emails in ${batches.length} batch(es)`);
+
+          for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+            const batch = batches[batchIndex];
+            const webhookPayload = {
+              user_id: connection.user_id,
+              gmail_connection_id: connection.id,
+              user_email: connection.email || "",
+              access_token: accessToken,
+              emails: batch,
+              batch_number: batchIndex + 1,
+              batch_total: batches.length,
+              sync_info: {
+                is_first_sync: isFirstSync,
+                total_emails: batch.length,
+                sync_timestamp: new Date().toISOString(),
               },
-              body: JSON.stringify(webhookPayload),
-            });
+            };
 
-            webhookSent = webhookResponse.ok;
-            if (webhookResponse.ok) {
-              totalPosted += emailDetails.length;
-              console.log(`[${connection.id}] Posted ${emailDetails.length} emails to webhook`);
-            } else {
-              const errorText = await webhookResponse.text();
-              console.error(`[${connection.id}] Webhook error:`, errorText);
+            try {
+              const webhookResponse = await fetch(webhookUrl, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify(webhookPayload),
+              });
+
+              if (webhookResponse.ok) {
+                webhookSent = true;
+                totalPosted += batch.length;
+
+                // Parse Make.com response
+                try {
+                  const makeResponse = await webhookResponse.json();
+
+                  // Make should return: { results: [{ message_id, classification }] }
+                  if (makeResponse.results && Array.isArray(makeResponse.results)) {
+                    const resultsCount = makeResponse.results.length;
+                    const sentCount = batch.length;
+
+                    if (resultsCount < sentCount) {
+                      console.warn('partial_results', {
+                        connection_id: connection.id,
+                        batch_number: batchIndex + 1,
+                        sent: sentCount,
+                        received: resultsCount,
+                        missing: sentCount - resultsCount,
+                      });
+                    }
+
+                    // Process results
+                    const resultMap = new Map(
+                      makeResponse.results.map((r: any) => [r.message_id, r.classification])
+                    );
+
+                    // Update classifications based on Make results
+                    for (const email of batch) {
+                      const classification = resultMap.get(email.message_id);
+
+                      if (classification) {
+                        // Update email with classification from Make
+                        await supabase
+                          .from("emails")
+                          .update({
+                            classification: classification,
+                            make_webhook_sent_at: new Date().toISOString(),
+                          })
+                          .eq("gmail_message_id", email.message_id)
+                          .eq("user_id", connection.user_id);
+                      } else {
+                        // Mark as pending if no result received
+                        console.log(`[${connection.id}] No result for message ${email.message_id}, keeping as pending`);
+                      }
+                    }
+
+                    console.log(`[${connection.id}] Batch ${batchIndex + 1}/${batches.length}: Posted ${batch.length}, received ${resultsCount} results`);
+                  } else {
+                    console.warn(`[${connection.id}] Batch ${batchIndex + 1}: Make response missing results array`);
+                  }
+                } catch (parseError) {
+                  console.error(`[${connection.id}] Failed to parse Make response:`, parseError);
+                }
+              } else {
+                const errorText = await webhookResponse.text();
+                console.error(`[${connection.id}] Webhook error (batch ${batchIndex + 1}):`, errorText);
+                totalFailures++;
+              }
+            } catch (webhookError) {
+              console.error(`[${connection.id}] Webhook exception (batch ${batchIndex + 1}):`, webhookError);
               totalFailures++;
             }
-          } catch (webhookError) {
-            console.error(`[${connection.id}] Webhook exception:`, webhookError);
-            totalFailures++;
           }
         }
 
