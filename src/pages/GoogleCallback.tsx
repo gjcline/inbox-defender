@@ -19,7 +19,7 @@ export function GoogleCallback() {
   const handleCallback = async () => {
     try {
       const code = searchParams.get('code');
-      const state = searchParams.get('state');
+      const stateParam = searchParams.get('state');
       const error = searchParams.get('error');
 
       if (error) {
@@ -33,7 +33,18 @@ export function GoogleCallback() {
         throw new Error('No authorization code received from Google');
       }
 
-      if (!user || state !== user.id) {
+      // Parse state parameter
+      let state: { userId: string; clientId: string } | null = null;
+      if (stateParam) {
+        try {
+          const decoded = atob(stateParam.replace(/-/g, '+').replace(/_/g, '/'));
+          state = JSON.parse(decoded);
+        } catch (e) {
+          console.error('Failed to parse state:', e);
+        }
+      }
+
+      if (!user || !state || state.userId !== user.id) {
         throw new Error('Invalid session. Please sign in and try again.');
       }
 
@@ -65,10 +76,20 @@ export function GoogleCallback() {
         const errorData = await tokenResponse.json().catch(() => ({ reason: 'unknown' }));
         console.error('Token exchange failed:', errorData);
 
+        // Handle client_id_mismatch
+        if (errorData.reason === 'client_id_mismatch') {
+          throw new Error(`Configuration Error: ${errorData.detail || 'Client ID mismatch between frontend and backend'}`);
+        }
+
         // Handle token_exchange_failed from edge function
         if (errorData.reason === 'token_exchange_failed') {
           const firstLine = errorData.detail?.split('\n')[0] || 'Token exchange failed';
           throw new Error(`OAuth Error: ${firstLine}`);
+        }
+
+        // Handle invalid_state
+        if (errorData.reason === 'invalid_state') {
+          throw new Error('Invalid OAuth state. Please try connecting again.');
         }
 
         throw new Error('Failed to exchange authorization code');

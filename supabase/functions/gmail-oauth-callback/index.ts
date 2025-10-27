@@ -12,6 +12,29 @@ interface OAuthCallbackRequest {
   userId: string;
 }
 
+interface OAuthState {
+  userId: string;
+  clientId: string;
+}
+
+function base64urlDecode(str: string): string {
+  let base64 = str.replace(/-/g, '+').replace(/_/g, '/');
+  while (base64.length % 4) {
+    base64 += '=';
+  }
+  return atob(base64);
+}
+
+function parseOAuthState(stateParam: string): OAuthState | null {
+  try {
+    const decoded = base64urlDecode(stateParam);
+    return JSON.parse(decoded);
+  } catch (error) {
+    console.error('Failed to parse OAuth state:', error);
+    return null;
+  }
+}
+
 Deno.serve(async (req: Request) => {
   const requestUrl = new URL(req.url);
   console.log("=== Gmail OAuth Callback Started ===");
@@ -58,10 +81,52 @@ Deno.serve(async (req: Request) => {
     if (req.method === "GET") {
       console.log("Processing GET request (OAuth callback from Google)");
       code = requestUrl.searchParams.get("code") || "";
-      userId = requestUrl.searchParams.get("state") || "";
+      const stateParam = requestUrl.searchParams.get("state") || "";
       console.log("Extracted from query params:");
       console.log("- Code:", code ? `${code.substring(0, 20)}...` : "missing");
-      console.log("- User ID (state):", userId || "missing");
+      console.log("- State:", stateParam ? `${stateParam.substring(0, 20)}...` : "missing");
+
+      // Parse and verify state
+      const state = parseOAuthState(stateParam);
+      if (!state) {
+        return new Response(
+          JSON.stringify({
+            ok: false,
+            reason: "invalid_state",
+            detail: "Failed to parse OAuth state parameter",
+          }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
+      }
+
+      userId = state.userId;
+
+      // Sanity check: verify client ID suffix matches
+      const edgeClientIdSuffix = googleClientId.split('-')[0].slice(-8);
+      if (state.clientId !== edgeClientIdSuffix) {
+        console.error("client_id_mismatch", {
+          frontend_suffix: state.clientId,
+          edge_suffix: edgeClientIdSuffix,
+          state_param: stateParam,
+        });
+
+        return new Response(
+          JSON.stringify({
+            ok: false,
+            reason: "client_id_mismatch",
+            detail: `OAuth configuration mismatch. Frontend client ID suffix (${state.clientId}) does not match backend (${edgeClientIdSuffix}). Please check your environment variables.`,
+          }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
+      }
+
+      console.log("✓ Client ID verification passed");
     } else if (req.method === "POST") {
       console.log("Processing POST request (legacy mode)");
       const body: OAuthCallbackRequest = await req.json();

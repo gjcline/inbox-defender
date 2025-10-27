@@ -15,13 +15,28 @@ const getGoogleRedirectUri = (): string => {
 
 export const GOOGLE_REDIRECT_URI = getGoogleRedirectUri();
 
-export function buildAuthUrl(state: string): string {
+function base64urlEncode(str: string): string {
+  return btoa(str)
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=/g, '');
+}
+
+export function buildAuthUrl(userId: string): string {
   const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
   if (!clientId || clientId === 'undefined') {
     console.error('❌ VITE_GOOGLE_CLIENT_ID is not configured!');
     throw new Error('VITE_GOOGLE_CLIENT_ID is not configured');
   }
+
+  // Encode JSON state with userId and clientId suffix for sanity checking
+  const clientIdSuffix = clientId.split('-')[0].slice(-8);
+  const stateData = {
+    userId,
+    clientId: clientIdSuffix,
+  };
+  const state = base64urlEncode(JSON.stringify(stateData));
 
   const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
   authUrl.searchParams.append('client_id', clientId);
