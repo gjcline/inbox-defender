@@ -30,6 +30,8 @@ export function GoogleCallback() {
     if (user) {
       const authUrl = buildAuthUrl(user.id);
       window.location.href = authUrl;
+    } else {
+      navigate('/dashboard');
     }
   };
 
@@ -53,13 +55,19 @@ export function GoogleCallback() {
         throw new Error('missing_params: no code/state on URL');
       }
 
-      if (!user) {
-        throw new Error('Invalid session. Please sign in and try again.');
-      }
-
       setMessage('Exchanging authorization code...');
 
-      console.info('oauth_cb_fetch_begin', { postUrl, hasAnon: !!anon });
+      // Don't block on frontend session; trust state.userId and verify server-side
+      const payload: any = { code, state };
+      if (user?.id) {
+        payload.client_user_id = user.id;
+      }
+
+      console.info('oauth_cb_fetch_begin', {
+        postUrl,
+        hasAnon: !!anon,
+        hasClientUserId: !!user?.id,
+      });
 
       const res = await fetch(postUrl, {
         method: 'POST',
@@ -68,7 +76,7 @@ export function GoogleCallback() {
           'Authorization': `Bearer ${anon}`,
           'apikey': anon,
         },
-        body: JSON.stringify({ code, state }),
+        body: JSON.stringify(payload),
       });
 
       const text = await res.text();

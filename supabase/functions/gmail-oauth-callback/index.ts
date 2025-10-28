@@ -158,6 +158,25 @@ Deno.serve(async (req: Request) => {
       }
 
       console.log("state_verified", { userId });
+
+      // Verify user exists in Supabase Auth (server-side check)
+      const { data: userData, error: userError } = await supabase.auth.admin.getUserById(userId);
+      if (userError || !userData?.user) {
+        console.error("unknown_user", { userId, error: userError?.message });
+        return new Response(
+          JSON.stringify({
+            ok: false,
+            reason: "unknown_user",
+            detail: `User not found: ${userId}`,
+          }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
+      }
+
+      console.log("user_verified", { userId, email: userData.user.email });
     } else {
       throw new Error(`Unsupported method: ${req.method}`);
     }
