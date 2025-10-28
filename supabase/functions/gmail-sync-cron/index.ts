@@ -206,7 +206,7 @@ Deno.serve(async (req: Request) => {
     console.log("lock_attempt", { acquired: !!tryLock });
 
     if (!tryLock) {
-      console.log("sync_skip: another sync is already running");
+      console.log("lock_held", "another sync is already running");
       return new Response(
         JSON.stringify({ ok: true, reason: "lock_held" }),
         {
@@ -217,7 +217,7 @@ Deno.serve(async (req: Request) => {
     }
 
     lockAcquired = true;
-    console.log("lock_acquired");
+    console.log("lock_acquired", { key: ADVISORY_LOCK_KEY });
 
     // Create sync_history row at start
     const { data: syncHistory, error: syncHistoryError } = await supabase
@@ -255,7 +255,7 @@ Deno.serve(async (req: Request) => {
 
     // Guard: no active connections
     if (!connections || connections.length === 0) {
-      console.log("no_active_connections");
+      console.log("no_active_connections", "marking sync_history as completed with zeros");
 
       if (syncHistoryId) {
         await supabase
@@ -264,14 +264,15 @@ Deno.serve(async (req: Request) => {
             sync_completed_at: new Date().toISOString(),
             status: "completed",
             emails_fetched: 0,
-          emails_sent_to_webhook: 0,
-          refreshed_tokens: 0,
-          failures: 0,
-        })
-        .eq("id", syncHistoryId);
+            emails_sent_to_webhook: 0,
+            refreshed_tokens: 0,
+            failures: 0,
+          })
+          .eq("id", syncHistoryId);
+      }
 
       return new Response(
-        JSON.stringify({ message: "No active connections to sync" }),
+        JSON.stringify({ ok: true, reason: "no_active_connections" }),
         {
           status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -706,7 +707,7 @@ Deno.serve(async (req: Request) => {
     if (lockAcquired) {
       try {
         await supabase.rpc("pg_advisory_unlock", { key: ADVISORY_LOCK_KEY });
-        console.log("lock_released");
+        console.log("lock_released", { key: ADVISORY_LOCK_KEY });
       } catch (unlockError) {
         console.error("lock_release_failed", unlockError);
       }
