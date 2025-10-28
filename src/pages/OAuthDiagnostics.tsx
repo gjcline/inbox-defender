@@ -42,6 +42,8 @@ export function OAuthDiagnostics() {
   const [testingDryRun, setTestingDryRun] = useState(false);
   const [pingTest, setPingTest] = useState<TestResult | null>(null);
   const [testingPing, setTestingPing] = useState(false);
+  const [syntheticProbes, setSyntheticProbes] = useState<{[key: string]: TestResult}>({});
+  const [runningSyntheticProbes, setRunningSyntheticProbes] = useState(false);
 
   useEffect(() => {
     loadConnectionStatus();
@@ -272,6 +274,63 @@ export function OAuthDiagnostics() {
     } finally {
       setTestingPing(false);
     }
+  };
+
+  const runSyntheticProbes = async () => {
+    setRunningSyntheticProbes(true);
+    setSyntheticProbes({});
+
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+    const probes = ['invalid_client', 'redirect_mismatch', 'bad_code'];
+
+    for (const probe of probes) {
+      try {
+        const response = await fetch(`${supabaseUrl}/functions/v1/gmail-oauth-callback`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${anonKey}`,
+            'apikey': anonKey,
+          },
+          body: JSON.stringify({
+            force_error: probe,
+            code: 'synthetic_test_code',
+            state: btoa(JSON.stringify({ userId: user?.id || 'test', clientId: 'test1234' })),
+          }),
+        });
+
+        const text = await response.text();
+        let json: any = null;
+        try {
+          json = JSON.parse(text);
+        } catch {
+          // Not JSON
+        }
+
+        setSyntheticProbes(prev => ({
+          ...prev,
+          [probe]: {
+            success: response.ok,
+            data: json || { raw: text },
+            timestamp: new Date().toISOString(),
+            error: !response.ok ? (json?.reason || `http_${response.status}`) : undefined,
+          },
+        }));
+      } catch (error) {
+        setSyntheticProbes(prev => ({
+          ...prev,
+          [probe]: {
+            success: false,
+            error: error instanceof Error ? error.message : String(error),
+            timestamp: new Date().toISOString(),
+          },
+        }));
+      }
+    }
+
+    setRunningSyntheticProbes(false);
   };
 
   const getTimeUntilExpiry = () => {
@@ -786,6 +845,76 @@ export function OAuthDiagnostics() {
               </div>
             </div>
           )}
+
+          {/* Synthetic OAuth Probes */}
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="bg-gradient-to-r from-purple-500 to-purple-600 px-6 py-4">
+              <h2 className="text-lg font-semibold text-white">Synthetic OAuth Probes</h2>
+              <p className="text-sm text-purple-100">Test OAuth callback error handling</p>
+            </div>
+            <div className="p-6">
+              <p className="text-sm text-gray-600 mb-4">
+                These probes intentionally trigger specific OAuth errors to verify error handling:
+              </p>
+              <Button
+                onClick={runSyntheticProbes}
+                disabled={runningSyntheticProbes}
+                className="mb-4"
+              >
+                <Play className="w-4 h-4 mr-2" />
+                {runningSyntheticProbes ? 'Running Probes...' : 'Run Synthetic OAuth Probes'}
+              </Button>
+
+              {Object.keys(syntheticProbes).length > 0 && (
+                <div className="space-y-4">
+                  {['invalid_client', 'redirect_mismatch', 'bad_code'].map((probe) => {
+                    const result = syntheticProbes[probe];
+                    if (!result) return null;
+
+                    return (
+                      <div key={probe} className={`p-4 rounded-lg border ${
+                        result.success
+                          ? 'bg-red-50 border-red-200'
+                          : 'bg-green-50 border-green-200'
+                      }`}>
+                        <div className="flex items-start gap-3 mb-2">
+                          {!result.success ? (
+                            <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
+                          ) : (
+                            <XCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
+                          )}
+                          <div className="flex-1">
+                            <p className={`text-sm font-medium ${
+                              !result.success ? 'text-green-900' : 'text-red-900'
+                            }`}>
+                              {probe.replace(/_/g, ' ').toUpperCase()}
+                            </p>
+                            <p className="text-xs text-gray-500 mt-1">
+                              {!result.success ? 'Failed as expected ✓' : 'Unexpected success'}
+                            </p>
+                          </div>
+                        </div>
+                        {result.data && (
+                          <div className="mt-3">
+                            <p className="text-xs font-medium text-gray-700 mb-1">Response:</p>
+                            <pre className="p-3 bg-white border border-gray-200 rounded text-xs overflow-x-auto">
+                              {JSON.stringify(result.data, null, 2)}
+                            </pre>
+                          </div>
+                        )}
+                        {result.error && (
+                          <div className="mt-2">
+                            <p className="text-xs font-medium text-gray-700">Error Reason:</p>
+                            <p className="text-sm text-gray-900 font-mono">{result.error}</p>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>

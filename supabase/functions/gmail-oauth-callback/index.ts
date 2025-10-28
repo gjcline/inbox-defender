@@ -67,6 +67,7 @@ Deno.serve(async (req: Request) => {
     let code: string = "";
     let userId: string = "";
     let stateParam: string = "";
+    let forceError: string | undefined;
 
     // Handle POST (from frontend callback page)
     if (req.method === "POST") {
@@ -94,6 +95,12 @@ Deno.serve(async (req: Request) => {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           }
         );
+      }
+
+      // Synthetic error probes (non-prod only)
+      forceError = body.force_error;
+      if (forceError) {
+        console.log("synthetic_probe_requested", { forceError });
       }
 
       code = body.code || "";
@@ -187,16 +194,33 @@ Deno.serve(async (req: Request) => {
     }
 
     console.log("token_exchange_begin", { hasCode: !!code, redirectUri: REDIRECT_URI });
+
+    // Apply synthetic error mutations for testing
+    let actualClientId = googleClientId;
+    let actualRedirectUri = REDIRECT_URI;
+    let actualCode = code;
+
+    if (forceError === "invalid_client") {
+      actualClientId = "FAKE_CLIENT_ID_123.apps.googleusercontent.com";
+      console.log("synthetic_probe_active", { forceError, mutation: "invalid_client_id" });
+    } else if (forceError === "redirect_mismatch") {
+      actualRedirectUri = "https://wrong-domain.com/callback";
+      console.log("synthetic_probe_active", { forceError, mutation: "wrong_redirect_uri" });
+    } else if (forceError === "bad_code") {
+      actualCode = "FAKE_CODE_123";
+      console.log("synthetic_probe_active", { forceError, mutation: "fake_code" });
+    }
+
     const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
       },
       body: new URLSearchParams({
-        code,
-        client_id: googleClientId,
+        code: actualCode,
+        client_id: actualClientId,
         client_secret: googleClientSecret,
-        redirect_uri: REDIRECT_URI,
+        redirect_uri: actualRedirectUri,
         grant_type: "authorization_code",
       }),
     });
