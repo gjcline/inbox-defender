@@ -150,7 +150,16 @@ export function GoogleCallback() {
 
       if (!res.ok || json?.ok === false) {
         const reason = json?.reason ?? `http_${res.status}`;
-        const detail = (json?.detail ?? json?.detail_raw ?? text ?? '').toString().slice(0, 800);
+
+        // Handle detail which might be a string, object, or undefined
+        let detailValue = json?.detail ?? json?.detail_raw ?? text ?? '';
+        if (typeof detailValue === 'object' && detailValue !== null) {
+          detailValue = JSON.stringify(detailValue, null, 2);
+        } else {
+          detailValue = String(detailValue);
+        }
+        const detail = detailValue.slice(0, 800);
+
         const redirectUri = json?.using_redirect_uri;
 
         setUsingRedirectUri(redirectUri || '');
