@@ -103,6 +103,116 @@ Deno.serve(async (req: Request) => {
         );
       }
 
+      // Probe mode: test token exchange without DB writes
+      if (body.probe) {
+        console.log("probe_mode", "testing token exchange");
+        const probeCode = body.probe.code;
+        const probeState = body.probe.state;
+
+        if (!probeCode || !probeState) {
+          return new Response(
+            JSON.stringify({
+              ok: false,
+              reason: "probe_missing_params",
+              using_redirect_uri: REDIRECT_URI,
+            }),
+            {
+              status: 400,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            }
+          );
+        }
+
+        // Decode and validate state
+        const state = parseOAuthState(probeState);
+        if (!state) {
+          return new Response(
+            JSON.stringify({
+              ok: false,
+              reason: "probe_state_invalid",
+              using_redirect_uri: REDIRECT_URI,
+            }),
+            {
+              status: 400,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            }
+          );
+        }
+
+        console.log("probe_state_ok", {
+          userId: state.userId,
+          clientIdSuffix: state.clientId
+        });
+
+        // Perform real token exchange with Google
+        try {
+          const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/x-www-form-urlencoded",
+            },
+            body: new URLSearchParams({
+              code: probeCode,
+              client_id: googleClientId,
+              client_secret: googleClientSecret,
+              redirect_uri: REDIRECT_URI,
+              grant_type: "authorization_code",
+            }),
+          });
+
+          const responseText = await tokenResponse.text();
+
+          console.log("probe_token_exchange", {
+            status: tokenResponse.status,
+            ok: tokenResponse.ok,
+          });
+
+          if (!tokenResponse.ok) {
+            return new Response(
+              JSON.stringify({
+                ok: false,
+                reason: "token_exchange_failed",
+                status: tokenResponse.status,
+                detail_raw: responseText.slice(0, 800),
+                using_redirect_uri: REDIRECT_URI,
+              }),
+              {
+                status: 200,
+                headers: { ...corsHeaders, "Content-Type": "application/json" },
+              }
+            );
+          }
+
+          // Success - return token response
+          return new Response(
+            JSON.stringify({
+              ok: true,
+              reason: "probe_token_exchange_success",
+              status: tokenResponse.status,
+              detail_raw: responseText.slice(0, 800),
+              using_redirect_uri: REDIRECT_URI,
+            }),
+            {
+              status: 200,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            }
+          );
+        } catch (error) {
+          return new Response(
+            JSON.stringify({
+              ok: false,
+              reason: "probe_exception",
+              detail_raw: error instanceof Error ? error.message : String(error),
+              using_redirect_uri: REDIRECT_URI,
+            }),
+            {
+              status: 200,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            }
+          );
+        }
+      }
+
       // Synthetic error probes (non-prod only)
       forceError = body.force_error;
       if (forceError) {
@@ -124,6 +234,7 @@ Deno.serve(async (req: Request) => {
             ok: false,
             reason: "missing_params",
             detail: "Missing code or state parameter",
+            using_redirect_uri: REDIRECT_URI,
           }),
           {
             status: 400,
@@ -141,6 +252,7 @@ Deno.serve(async (req: Request) => {
             ok: false,
             reason: "invalid_state",
             detail: "Failed to parse OAuth state parameter",
+            using_redirect_uri: REDIRECT_URI,
           }),
           {
             status: 400,
@@ -164,6 +276,7 @@ Deno.serve(async (req: Request) => {
             ok: false,
             reason: "client_id_mismatch",
             detail: `OAuth configuration mismatch. Frontend client ID suffix (${state.clientId}) does not match backend (${edgeClientIdSuffix}). Please check your environment variables.`,
+            using_redirect_uri: REDIRECT_URI,
           }),
           {
             status: 400,
@@ -185,6 +298,7 @@ Deno.serve(async (req: Request) => {
           JSON.stringify({
             ok: false,
             reason: "unknown_user",
+            using_redirect_uri: REDIRECT_URI,
             detail: `User not found: ${userId}`,
           }),
           {
@@ -244,6 +358,7 @@ Deno.serve(async (req: Request) => {
           reason: "token_exchange_failed",
           hint: "Google rejected the authorization code",
           detail: errTxt.slice(0, 500),
+          using_redirect_uri: REDIRECT_URI,
         }),
         {
           status: 400,
@@ -283,6 +398,7 @@ Deno.serve(async (req: Request) => {
           reason: "gmail_profile_failed",
           hint: "Could not fetch Gmail profile",
           detail: errTxt.slice(0, 500),
+          using_redirect_uri: REDIRECT_URI,
         }),
         {
           status: 400,
@@ -368,6 +484,7 @@ Deno.serve(async (req: Request) => {
           reason: "save_connection_failed",
           hint: "Database error saving connection",
           detail: connectionError.message,
+          using_redirect_uri: REDIRECT_URI,
         }),
         {
           status: 500,
@@ -436,6 +553,7 @@ Deno.serve(async (req: Request) => {
       JSON.stringify({
         ok: true,
         message: "Gmail connected successfully",
+        using_redirect_uri: REDIRECT_URI,
       }),
       {
         status: 200,
@@ -474,6 +592,7 @@ Deno.serve(async (req: Request) => {
         reason: "callback_error",
         hint: "OAuth callback failed",
         detail: errorMessage,
+        using_redirect_uri: REDIRECT_URI,
       }),
       {
         status: 400,
