@@ -76,6 +76,8 @@ Deno.serve(async (req: Request) => {
         hasCode: !!(body.code),
         hasState: !!(body.state),
         hasDryRun: !!(body.dry_run),
+        codeLength: body.code?.length || 0,
+        stateLength: body.state?.length || 0,
       });
 
       // Dry-run mode for testing
@@ -157,7 +159,10 @@ Deno.serve(async (req: Request) => {
         );
       }
 
-      console.log("state_verified", { userId });
+      console.log("state_verified", {
+        userId,
+        clientIdSuffix: state.clientId,
+      });
 
       // Verify user exists in Supabase Auth (server-side check)
       const { data: userData, error: userError } = await supabase.auth.admin.getUserById(userId);
@@ -181,7 +186,7 @@ Deno.serve(async (req: Request) => {
       throw new Error(`Unsupported method: ${req.method}`);
     }
 
-    console.log("Step 1: Exchanging authorization code for tokens...");
+    console.log("token_exchange_begin", { hasCode: !!code, redirectUri: REDIRECT_URI });
     const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
       headers: {
@@ -207,6 +212,7 @@ Deno.serve(async (req: Request) => {
         JSON.stringify({
           ok: false,
           reason: "token_exchange_failed",
+          hint: "Google rejected the authorization code",
           detail: errTxt.slice(0, 500),
         }),
         {
@@ -218,10 +224,11 @@ Deno.serve(async (req: Request) => {
 
     const tokens = await tokenResponse.json();
     const { access_token, refresh_token, expires_in } = tokens;
-    console.log("✓ Token exchange successful");
-    console.log("- Access token:", access_token ? "received" : "missing");
-    console.log("- Refresh token:", refresh_token ? "received" : "missing");
-    console.log("- Expires in:", expires_in, "seconds");
+    console.log("token_exchange_success", {
+      hasAccessToken: !!access_token,
+      hasRefreshToken: !!refresh_token,
+      expiresIn: expires_in,
+    });
 
     console.log("Step 2: Fetching Gmail user info...");
     const userInfoResponse = await fetch(
@@ -234,14 +241,29 @@ Deno.serve(async (req: Request) => {
     );
 
     if (!userInfoResponse.ok) {
-      throw new Error("Failed to fetch user info");
+      const errTxt = await userInfoResponse.text();
+      console.error("gmail_profile_failed", {
+        status: userInfoResponse.status,
+        body: errTxt.slice(0, 400),
+      });
+
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          reason: "gmail_profile_failed",
+          hint: "Could not fetch Gmail profile",
+          detail: errTxt.slice(0, 500),
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
 
     const userInfo = await userInfoResponse.json();
     const { email, id: googleUserId } = userInfo;
-    console.log("✓ User info fetched");
-    console.log("- Email:", email);
-    console.log("- Google User ID:", googleUserId);
+    console.log("gmail_profile_ok", { email, googleUserId });
 
     console.log("Step 3: Checking for existing mailbox...");
     const { data: existingMailbox } = await supabase
@@ -303,10 +325,26 @@ Deno.serve(async (req: Request) => {
       });
 
     if (connectionError) {
-      console.error("Connection save error:", connectionError);
-      throw connectionError;
+      console.error("save_connection_failed", {
+        code: connectionError.code,
+        message: connectionError.message,
+        details: connectionError.details,
+      });
+
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          reason: "save_connection_failed",
+          hint: "Database error saving connection",
+          detail: connectionError.message,
+        }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
-    console.log("✓ Gmail connection saved");
+    console.log("connection_saved", { userId, mailboxId });
 
     const { error: settingsError } = await supabase
       .from("user_settings")
@@ -347,12 +385,13 @@ Deno.serve(async (req: Request) => {
       // Don't fail the OAuth flow if sync fails
     }
 
-    console.log("=== OAuth Callback Completed Successfully ===");
+    console.log("oauth_callback_complete", { userId, email, mailboxId });
 
     // For GET requests (OAuth callback), redirect to dashboard
     if (req.method === "GET") {
+      const frontendUrl = Deno.env.get("FRONTEND_URL") || "https://app.bliztic.com";
       const dashboardUrl = `${frontendUrl}/dashboard?gmail_connected=1`;
-      console.log("Redirecting to:", dashboardUrl);
+      console.log("redirecting_to_dashboard", dashboardUrl);
       return new Response(null, {
         status: 302,
         headers: {
@@ -376,19 +415,19 @@ Deno.serve(async (req: Request) => {
       }
     );
   } catch (error) {
-    console.error("=== OAuth Callback Error ===");
-    console.error("Error:", error);
-    if (error instanceof Error) {
-      console.error("Message:", error.message);
-      console.error("Stack:", error.stack);
-    }
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : undefined;
+
+    console.error("oauth_callback_error", {
+      message: errorMessage,
+      stack: errorStack?.split("\n").slice(0, 3).join("\n"),
+    });
 
     // For GET requests (OAuth callback), redirect to dashboard with error
     if (req.method === "GET") {
       const frontendUrl = Deno.env.get("FRONTEND_URL") || "https://app.bliztic.com";
-      const errorMessage = error instanceof Error ? error.message : "OAuth callback failed";
       const dashboardUrl = `${frontendUrl}/dashboard?gmail_error=${encodeURIComponent(errorMessage)}`;
-      console.log("Redirecting to dashboard with error:", dashboardUrl);
+      console.log("redirecting_with_error", dashboardUrl);
       return new Response(null, {
         status: 302,
         headers: {
@@ -397,12 +436,13 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // Return JSON error
+    // Return structured JSON error
     return new Response(
       JSON.stringify({
         ok: false,
         reason: "callback_error",
-        detail: error instanceof Error ? error.message : "OAuth callback failed",
+        hint: "OAuth callback failed",
+        detail: errorMessage,
       }),
       {
         status: 400,
