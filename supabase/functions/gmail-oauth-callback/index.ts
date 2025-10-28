@@ -30,7 +30,11 @@ function parseOAuthState(stateParam: string): OAuthState | null {
     const decoded = base64urlDecode(stateParam);
     return JSON.parse(decoded);
   } catch (error) {
-    console.error('Failed to parse OAuth state:', error);
+    console.error('state_parse_error', {
+      stateLength: stateParam?.length || 0,
+      stateSample: stateParam?.slice(0, 50),
+      error: error instanceof Error ? error.message : String(error),
+    });
     return null;
   }
 }
@@ -62,7 +66,9 @@ Deno.serve(async (req: Request) => {
       throw new Error("Google OAuth credentials not configured");
     }
 
+    // Use service role key to bypass RLS
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    console.log("db_client_initialized", { usingServiceRole: true });
 
     let code: string = "";
     let userId: string = "";
@@ -149,8 +155,8 @@ Deno.serve(async (req: Request) => {
       const edgeClientIdSuffix = googleClientId.split('-')[0].slice(-8);
       if (state.clientId !== edgeClientIdSuffix) {
         console.error("client_id_mismatch", {
-          fe: state.clientId,
-          be: edgeClientIdSuffix,
+          feSuffix: state.clientId,
+          beSuffix: edgeClientIdSuffix,
         });
 
         return new Response(
@@ -353,6 +359,7 @@ Deno.serve(async (req: Request) => {
         code: connectionError.code,
         message: connectionError.message,
         details: connectionError.details,
+        hint: "Check RLS policies and schema",
       });
 
       return new Response(
@@ -368,7 +375,7 @@ Deno.serve(async (req: Request) => {
         }
       );
     }
-    console.log("connection_saved", { userId, mailboxId });
+    console.log("connection_saved", { userId, email, mailboxId });
 
     const { error: settingsError } = await supabase
       .from("user_settings")
