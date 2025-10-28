@@ -37,10 +37,6 @@ function parseOAuthState(stateParam: string): OAuthState | null {
 
 Deno.serve(async (req: Request) => {
   const requestUrl = new URL(req.url);
-  console.log("=== Gmail OAuth Callback Started ===");
-  console.log("Method:", req.method);
-  console.log("URL:", requestUrl.toString());
-  console.log("Query Params:", Object.fromEntries(requestUrl.searchParams));
 
   if (req.method === "OPTIONS") {
     return new Response(null, {
@@ -49,22 +45,16 @@ Deno.serve(async (req: Request) => {
     });
   }
 
+  // Single source of truth for redirect URI
+  const REDIRECT_URI = Deno.env.get("GOOGLE_REDIRECT_URI") ?? "https://app.bliztic.com/api/auth/google/callback";
+
+  console.log("using_redirect_uri", REDIRECT_URI);
+
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const googleClientId = Deno.env.get("GOOGLE_CLIENT_ID")!;
     const googleClientSecret = Deno.env.get("GOOGLE_CLIENT_SECRET")!;
-    const frontendUrl = Deno.env.get("FRONTEND_URL") || "https://app.bliztic.com";
-
-    // Single source of truth for redirect URI
-    const REDIRECT_URI = Deno.env.get("GOOGLE_REDIRECT_URI") ?? "https://app.bliztic.com/api/auth/google/callback";
-
-    console.log("Environment check:");
-    console.log("- Supabase URL:", supabaseUrl ? "✓" : "✗");
-    console.log("- Service Key:", supabaseServiceKey ? "✓" : "✗");
-    console.log("- Google Client ID:", googleClientId ? "✓" : "✗");
-    console.log("- Google Client Secret:", googleClientSecret ? "✓" : "✗");
-    console.log("- Frontend URL:", frontendUrl);
 
     if (!googleClientId || !googleClientSecret) {
       throw new Error("Google OAuth credentials not configured");
@@ -72,23 +62,57 @@ Deno.serve(async (req: Request) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    let code: string;
-    let userId: string;
+    let code: string = "";
+    let userId: string = "";
+    let stateParam: string = "";
 
-    console.log("Using redirect URI:", REDIRECT_URI);
+    // Handle POST (from frontend callback page)
+    if (req.method === "POST") {
+      const body = await req.json();
 
-    // Handle both GET (from Google OAuth) and POST (legacy/testing)
-    if (req.method === "GET") {
-      console.log("Processing GET request (OAuth callback from Google)");
-      code = requestUrl.searchParams.get("code") || "";
-      const stateParam = requestUrl.searchParams.get("state") || "";
-      console.log("Extracted from query params:");
-      console.log("- Code:", code ? `${code.substring(0, 20)}...` : "missing");
-      console.log("- State:", stateParam ? `${stateParam.substring(0, 20)}...` : "missing");
+      // Dry-run mode for testing
+      if (body.dry_run === true) {
+        console.log("dry_run", "short-circuit");
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            mode: "dry_run",
+            redirect_uri: REDIRECT_URI,
+          }),
+          {
+            status: 200,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
+      }
+
+      code = body.code || "";
+      stateParam = body.state || "";
+
+      console.log("oauth_cb_begin", {
+        hasCode: !!code,
+        hasState: !!stateParam,
+      });
+
+      if (!code || !stateParam) {
+        console.error("missing_params", { hasCode: !!code, hasState: !!stateParam });
+        return new Response(
+          JSON.stringify({
+            ok: false,
+            reason: "missing_params",
+            detail: "Missing code or state parameter",
+          }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
+      }
 
       // Parse and verify state
       const state = parseOAuthState(stateParam);
       if (!state) {
+        console.error("invalid_state", stateParam?.slice(0, 50));
         return new Response(
           JSON.stringify({
             ok: false,
@@ -108,9 +132,8 @@ Deno.serve(async (req: Request) => {
       const edgeClientIdSuffix = googleClientId.split('-')[0].slice(-8);
       if (state.clientId !== edgeClientIdSuffix) {
         console.error("client_id_mismatch", {
-          frontend_suffix: state.clientId,
-          edge_suffix: edgeClientIdSuffix,
-          state_param: stateParam,
+          fe: state.clientId,
+          be: edgeClientIdSuffix,
         });
 
         return new Response(
@@ -126,22 +149,9 @@ Deno.serve(async (req: Request) => {
         );
       }
 
-      console.log("✓ Client ID verification passed");
-    } else if (req.method === "POST") {
-      console.log("Processing POST request (legacy mode)");
-      const body: OAuthCallbackRequest = await req.json();
-      code = body.code;
-      userId = body.userId;
-      console.log("Extracted from POST body:");
-      console.log("- Code:", code ? `${code.substring(0, 20)}...` : "missing");
-      console.log("- User ID:", userId || "missing");
+      console.log("state_verified", { userId });
     } else {
       throw new Error(`Unsupported method: ${req.method}`);
-    }
-
-    if (!code || !userId) {
-      console.error("Missing required parameters:", { code: !!code, userId: !!userId });
-      throw new Error("Missing required parameters");
     }
 
     console.log("Step 1: Exchanging authorization code for tokens...");
@@ -163,11 +173,9 @@ Deno.serve(async (req: Request) => {
       const errTxt = await tokenResponse.text();
       console.error("token_exchange_failed", {
         status: tokenResponse.status,
-        body: errTxt,
-        redirect_uri: REDIRECT_URI,
+        body: errTxt.slice(0, 400),
       });
 
-      // Return error response for frontend toast
       return new Response(
         JSON.stringify({
           ok: false,

@@ -179,6 +179,8 @@ async function ensureValidToken(
 }
 
 Deno.serve(async (req: Request) => {
+  console.log("cron_begin");
+
   if (req.method === "OPTIONS") {
     return new Response(null, {
       status: 200,
@@ -201,10 +203,12 @@ Deno.serve(async (req: Request) => {
     // Advisory lock to prevent overlapping runs
     const { data: tryLock } = await supabase.rpc("pg_try_advisory_lock", { key: ADVISORY_LOCK_KEY });
 
+    console.log("lock_attempt", { acquired: !!tryLock });
+
     if (!tryLock) {
       console.log("sync_skip: another sync is already running");
       return new Response(
-        JSON.stringify({ message: "Sync already in progress, skipped" }),
+        JSON.stringify({ ok: true, reason: "lock_held" }),
         {
           status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -213,7 +217,7 @@ Deno.serve(async (req: Request) => {
     }
 
     lockAcquired = true;
-    console.log("Advisory lock acquired, starting sync");
+    console.log("lock_acquired");
 
     // Create sync_history row at start
     const { data: syncHistory, error: syncHistoryError } = await supabase
@@ -251,14 +255,15 @@ Deno.serve(async (req: Request) => {
 
     // Guard: no active connections
     if (!connections || connections.length === 0) {
-      console.log("no_active_connections: completing sync with zero counts");
+      console.log("no_active_connections");
 
-      await supabase
-        .from("sync_history")
-        .update({
-          sync_completed_at: new Date().toISOString(),
-          status: "completed",
-          emails_fetched: 0,
+      if (syncHistoryId) {
+        await supabase
+          .from("sync_history")
+          .update({
+            sync_completed_at: new Date().toISOString(),
+            status: "completed",
+            emails_fetched: 0,
           emails_sent_to_webhook: 0,
           refreshed_tokens: 0,
           failures: 0,
@@ -701,10 +706,11 @@ Deno.serve(async (req: Request) => {
     if (lockAcquired) {
       try {
         await supabase.rpc("pg_advisory_unlock", { key: ADVISORY_LOCK_KEY });
-        console.log("Advisory lock released");
+        console.log("lock_released");
       } catch (unlockError) {
-        console.error("Failed to release advisory lock:", unlockError);
+        console.error("lock_release_failed", unlockError);
       }
     }
+    console.log("cron_end");
   }
 });

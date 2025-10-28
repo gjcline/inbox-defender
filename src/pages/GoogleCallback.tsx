@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Loader2, CheckCircle, AlertCircle } from 'lucide-react';
-import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { GOOGLE_REDIRECT_URI } from '../lib/oauthConfig';
+import { buildAuthUrl } from '../lib/oauthConfig';
+import { Button } from '../components/ui/button';
 
 export function GoogleCallback() {
   const navigate = useNavigate();
@@ -11,15 +11,23 @@ export function GoogleCallback() {
   const { user } = useAuth();
   const [status, setStatus] = useState<'processing' | 'success' | 'error'>('processing');
   const [message, setMessage] = useState('Completing Gmail connection...');
+  const [errorDetail, setErrorDetail] = useState<string>('');
 
   useEffect(() => {
     handleCallback();
   }, []);
 
+  const handleTryAgain = () => {
+    if (user) {
+      const authUrl = buildAuthUrl(user.id);
+      window.location.href = authUrl;
+    }
+  };
+
   const handleCallback = async () => {
     try {
       const code = searchParams.get('code');
-      const stateParam = searchParams.get('state');
+      const state = searchParams.get('state');
       const error = searchParams.get('error');
 
       if (error) {
@@ -29,170 +37,55 @@ export function GoogleCallback() {
         );
       }
 
-      if (!code) {
-        throw new Error('No authorization code received from Google');
+      if (!code || !state) {
+        throw new Error('No authorization code or state received from Google');
       }
 
-      // Parse state parameter
-      let state: { userId: string; clientId: string } | null = null;
-      if (stateParam) {
-        try {
-          const decoded = atob(stateParam.replace(/-/g, '+').replace(/_/g, '/'));
-          state = JSON.parse(decoded);
-        } catch (e) {
-          console.error('Failed to parse state:', e);
-        }
-      }
-
-      if (!user || !state || state.userId !== user.id) {
+      if (!user) {
         throw new Error('Invalid session. Please sign in and try again.');
       }
 
       setMessage('Exchanging authorization code...');
 
-      const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-      const clientSecret = import.meta.env.VITE_GOOGLE_CLIENT_SECRET;
-
-      if (!clientId || !clientSecret) {
-        throw new Error('OAuth configuration missing');
-      }
-
-      const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const response = await fetch(`${supabaseUrl}/functions/v1/gmail-oauth-callback`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
+          'Content-Type': 'application/json',
         },
-        body: new URLSearchParams({
-          code,
-          client_id: clientId,
-          client_secret: clientSecret,
-          redirect_uri: GOOGLE_REDIRECT_URI,
-          grant_type: 'authorization_code',
-        }),
-        signal: AbortSignal.timeout(30000),
+        body: JSON.stringify({ code, state }),
       });
 
-      if (!tokenResponse.ok) {
-        const errorData = await tokenResponse.json().catch(() => ({ reason: 'unknown' }));
-        console.error('Token exchange failed:', errorData);
+      const result = await response.json();
 
-        // Handle client_id_mismatch
-        if (errorData.reason === 'client_id_mismatch') {
-          throw new Error(`Configuration Error: ${errorData.detail || 'Client ID mismatch between frontend and backend'}`);
+      if (!response.ok || !result.ok) {
+        const reason = result.reason || 'unknown';
+        const detail = result.detail || 'No additional details';
+
+        console.error('OAuth callback failed:', { reason, detail });
+
+        if (reason === 'client_id_mismatch') {
+          throw new Error(`Configuration Error: ${detail}`);
         }
 
-        // Handle token_exchange_failed from edge function
-        if (errorData.reason === 'token_exchange_failed') {
-          const firstLine = errorData.detail?.split('\n')[0] || 'Token exchange failed';
-          throw new Error(`OAuth Error: ${firstLine}`);
+        if (reason === 'token_exchange_failed') {
+          const firstLine = detail.split('\n')[0];
+          throw new Error(`Token Exchange Failed: ${firstLine}`);
         }
 
-        // Handle invalid_state
-        if (errorData.reason === 'invalid_state') {
+        if (reason === 'invalid_state') {
           throw new Error('Invalid OAuth state. Please try connecting again.');
         }
 
-        throw new Error('Failed to exchange authorization code');
-      }
-
-      const tokens = await tokenResponse.json();
-      const { access_token, refresh_token, expires_in } = tokens;
-
-      if (!refresh_token) {
-        throw new Error('No refresh token received. Please try reconnecting.');
-      }
-
-      setMessage('Fetching Gmail profile...');
-
-      const profileResponse = await fetch(
-        'https://gmail.googleapis.com/gmail/v1/users/me/profile',
-        {
-          headers: {
-            Authorization: `Bearer ${access_token}`,
-          },
-          signal: AbortSignal.timeout(30000),
+        if (reason === 'missing_params') {
+          throw new Error('Missing required parameters. Please try again.');
         }
-      );
 
-      if (!profileResponse.ok) {
-        throw new Error('Failed to fetch Gmail profile');
-      }
-
-      const profile = await profileResponse.json();
-      const emailAddress = profile.emailAddress;
-
-      const userInfoResponse = await fetch(
-        'https://www.googleapis.com/oauth2/v2/userinfo',
-        {
-          headers: {
-            Authorization: `Bearer ${access_token}`,
-          },
-          signal: AbortSignal.timeout(30000),
-        }
-      );
-
-      if (!userInfoResponse.ok) {
-        throw new Error('Failed to fetch user info');
-      }
-
-      const userInfo = await userInfoResponse.json();
-      const googleUserId = userInfo.id;
-
-      setMessage('Saving connection...');
-
-      const expiresAt = new Date(Date.now() + expires_in * 1000).toISOString();
-
-      const { data: existingConnection, error: fetchError } = await supabase
-        .from('gmail_connections')
-        .select('id')
-        .eq('user_id', user.id)
-        .maybeSingle();
-
-      if (fetchError && fetchError.code !== 'PGRST116') {
-        throw fetchError;
-      }
-
-      const connectionData = {
-        user_id: user.id,
-        access_token,
-        refresh_token,
-        token_expires_at: expiresAt,
-        email: emailAddress,
-        google_user_id: googleUserId,
-        is_active: true,
-        last_error: null,
-        last_profile_check_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-
-      let connectionId: string;
-
-      if (existingConnection) {
-        const { data: updated, error: updateError } = await supabase
-          .from('gmail_connections')
-          .update(connectionData)
-          .eq('id', existingConnection.id)
-          .select('id')
-          .single();
-
-        if (updateError) throw updateError;
-        connectionId = updated.id;
-      } else {
-        const { data: created, error: createError } = await supabase
-          .from('gmail_connections')
-          .insert({
-            ...connectionData,
-            created_at: new Date().toISOString(),
-          })
-          .select('id')
-          .single();
-
-        if (createError) throw createError;
-        connectionId = created.id;
+        throw new Error(`Connection failed: ${reason}`);
       }
 
       setStatus('success');
-      setMessage(`Successfully connected ${emailAddress}`);
+      setMessage('Gmail connected successfully!');
 
       setTimeout(() => {
         navigate('/dashboard?gmail_connected=1');
@@ -200,11 +93,11 @@ export function GoogleCallback() {
     } catch (error) {
       console.error('OAuth callback error:', error);
       setStatus('error');
-      setMessage(error instanceof Error ? error.message : 'Failed to connect Gmail');
+      const errorMessage = error instanceof Error ? error.message : 'Failed to connect Gmail';
+      setMessage(errorMessage);
+      setErrorDetail(errorMessage);
 
-      setTimeout(() => {
-        navigate('/dashboard?gmail_error=1');
-      }, 3000);
+      // Don't auto-redirect on error
     }
   };
 
@@ -237,7 +130,23 @@ export function GoogleCallback() {
               </div>
               <h2 className="text-xl font-semibold text-gray-900 mb-2">Connection Failed</h2>
               <p className="text-gray-600 mb-4">{message}</p>
-              <p className="text-sm text-gray-500">Redirecting to settings...</p>
+              {errorDetail && (
+                <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-left">
+                  <p className="text-xs text-red-700 font-mono break-all">{errorDetail}</p>
+                </div>
+              )}
+              <div className="flex flex-col gap-3">
+                <Button onClick={handleTryAgain} className="w-full">
+                  Try Again
+                </Button>
+                <Button
+                  onClick={() => navigate('/dashboard')}
+                  variant="outline"
+                  className="w-full"
+                >
+                  Back to Dashboard
+                </Button>
+              </div>
             </>
           )}
         </div>

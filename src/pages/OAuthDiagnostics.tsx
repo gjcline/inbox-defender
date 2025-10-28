@@ -38,6 +38,8 @@ export function OAuthDiagnostics() {
   const [loading, setLoading] = useState(true);
   const [serverConfig, setServerConfig] = useState<ServerConfig | null>(null);
   const [loadingServerConfig, setLoadingServerConfig] = useState(true);
+  const [dryRunTest, setDryRunTest] = useState<TestResult | null>(null);
+  const [testingDryRun, setTestingDryRun] = useState(false);
 
   useEffect(() => {
     loadConnectionStatus();
@@ -183,6 +185,42 @@ export function OAuthDiagnostics() {
       });
     } finally {
       setTestingLabels(false);
+    }
+  };
+
+  const runDryRunTest = async () => {
+    setTestingDryRun(true);
+    setDryRunTest(null);
+
+    try {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const response = await fetch(`${supabaseUrl}/functions/v1/gmail-oauth-callback`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ dry_run: true }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`API Error: ${response.status} ${errorText}`);
+      }
+
+      const data = await response.json();
+      setDryRunTest({
+        success: true,
+        data,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      setDryRunTest({
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        timestamp: new Date().toISOString(),
+      });
+    } finally {
+      setTestingDryRun(false);
     }
   };
 
@@ -425,6 +463,58 @@ export function OAuthDiagnostics() {
                 <p className="text-xs text-gray-500 mt-1">
                   This is the exact URL that buildAuthUrl generates (with test state)
                 </p>
+              </div>
+
+              <div className="border-t border-gray-200 pt-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-900">Dry-Run Test</h3>
+                    <p className="text-xs text-gray-600 mt-0.5">
+                      Test OAuth callback without Google (confirms CORS, routing, secrets)
+                    </p>
+                  </div>
+                  <Button
+                    onClick={runDryRunTest}
+                    disabled={testingDryRun}
+                    size="sm"
+                  >
+                    <Play className="w-4 h-4 mr-2" />
+                    {testingDryRun ? 'Testing...' : 'Test Dry-Run'}
+                  </Button>
+                </div>
+                {dryRunTest && (
+                  <div className={`p-4 rounded-lg border ${
+                    dryRunTest.success
+                      ? 'bg-green-50 border-green-200'
+                      : 'bg-red-50 border-red-200'
+                  }`}>
+                    <div className="flex items-start gap-3 mb-2">
+                      {dryRunTest.success ? (
+                        <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
+                      ) : (
+                        <XCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
+                      )}
+                      <div className="flex-1">
+                        <p className={`text-sm font-medium ${
+                          dryRunTest.success ? 'text-green-900' : 'text-red-900'
+                        }`}>
+                          {dryRunTest.success ? 'Success' : 'Failed'}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          {new Date(dryRunTest.timestamp).toLocaleString()}
+                        </p>
+                      </div>
+                    </div>
+                    {dryRunTest.success && dryRunTest.data && (
+                      <pre className="mt-3 p-3 bg-white border border-gray-200 rounded text-xs overflow-x-auto">
+                        {JSON.stringify(dryRunTest.data, null, 2)}
+                      </pre>
+                    )}
+                    {!dryRunTest.success && dryRunTest.error && (
+                      <p className="mt-2 text-sm text-red-700">{dryRunTest.error}</p>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           </div>
