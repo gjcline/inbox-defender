@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Loader2, CheckCircle, AlertCircle } from 'lucide-react';
+import { Loader2, CheckCircle, AlertCircle, Copy } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { buildAuthUrl } from '../lib/oauthConfig';
 import { Button } from '../components/ui/button';
@@ -12,6 +12,10 @@ export function GoogleCallback() {
   const [status, setStatus] = useState<'processing' | 'success' | 'error'>('processing');
   const [message, setMessage] = useState('Completing Gmail connection...');
   const [errorDetail, setErrorDetail] = useState<string>('');
+  const [usingRedirectUri, setUsingRedirectUri] = useState<string>('');
+  const [probeResult, setProbeResult] = useState<any>(null);
+  const [showProbe, setShowProbe] = useState(false);
+  const [copySuccess, setCopySuccess] = useState(false);
 
   const supaUrl = import.meta.env.VITE_SUPABASE_URL;
   const anon = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -32,6 +36,58 @@ export function GoogleCallback() {
       window.location.href = authUrl;
     } else {
       navigate('/dashboard');
+    }
+  };
+
+  const handleCopyError = async () => {
+    try {
+      await navigator.clipboard.writeText(errorDetail);
+      setCopySuccess(true);
+      setTimeout(() => setCopySuccess(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  };
+
+  const handleRunProbe = async () => {
+    if (!code || !state) return;
+
+    setShowProbe(true);
+    setProbeResult({ loading: true });
+
+    try {
+      const res = await fetch(postUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${anon}`,
+          'apikey': anon,
+        },
+        body: JSON.stringify({
+          probe: { code, state }
+        }),
+      });
+
+      const text = await res.text();
+      let json: any = null;
+      try {
+        json = JSON.parse(text);
+      } catch {
+        // Not JSON
+      }
+
+      setProbeResult({
+        status: res.status,
+        ok: res.ok,
+        reason: json?.reason,
+        detail_raw: json?.detail_raw,
+        using_redirect_uri: json?.using_redirect_uri,
+        rawResponse: JSON.stringify(json ?? text, null, 2)
+      });
+    } catch (err) {
+      setProbeResult({
+        error: err instanceof Error ? err.message : String(err)
+      });
     }
   };
 
@@ -87,16 +143,25 @@ export function GoogleCallback() {
         // Not JSON
       }
 
-      if (!res.ok) {
-        const reason = json?.reason ?? `http_${res.status}`;
-        const detail = (json?.detail || text || '').toString().slice(0, 400);
-        throw new Error(`${reason}: ${detail}`);
-      }
+      console.log('oauth_cb_fetch_response', JSON.stringify({
+        status: res.status,
+        body: json ?? text
+      }, null, 2));
 
-      if (!json || !json.ok) {
-        const reason = json?.reason || 'unknown';
-        const detail = (json?.detail || 'No additional details').slice(0, 400);
-        throw new Error(`${reason}: ${detail}`);
+      if (!res.ok || json?.ok === false) {
+        const reason = json?.reason ?? `http_${res.status}`;
+        const detail = (json?.detail ?? json?.detail_raw ?? text ?? '').toString().slice(0, 800);
+        const redirectUri = json?.using_redirect_uri;
+
+        setUsingRedirectUri(redirectUri || '');
+
+        let errorMessage = `${reason}\n`;
+        if (redirectUri) {
+          errorMessage += `using_redirect_uri: ${redirectUri}\n`;
+        }
+        errorMessage += detail;
+
+        throw new Error(errorMessage);
       }
 
       setStatus('success');
@@ -181,9 +246,67 @@ export function GoogleCallback() {
               <p className="text-gray-600 mb-4">{message}</p>
               {errorDetail && (
                 <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-left">
-                  <p className="text-xs text-red-700 font-mono break-all">{errorDetail}</p>
+                  <div className="flex items-start justify-between mb-2">
+                    <p className="text-xs font-semibold text-red-900">Error Details:</p>
+                    <button
+                      onClick={handleCopyError}
+                      className="text-red-600 hover:text-red-700 flex items-center gap-1 text-xs"
+                    >
+                      <Copy className="w-3 h-3" />
+                      {copySuccess ? 'Copied!' : 'Copy'}
+                    </button>
+                  </div>
+                  <pre className="text-xs text-red-700 font-mono whitespace-pre-wrap break-all">{errorDetail}</pre>
                 </div>
               )}
+
+              {code && state && (
+                <div className="mb-4">
+                  <Button
+                    onClick={handleRunProbe}
+                    variant="outline"
+                    size="sm"
+                    className="w-full text-xs"
+                  >
+                    🔬 Run Probe on This Code
+                  </Button>
+                </div>
+              )}
+
+              {showProbe && probeResult && (
+                <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-left">
+                  <p className="text-xs font-semibold text-blue-900 mb-2">Probe Result:</p>
+                  {probeResult.loading ? (
+                    <p className="text-xs text-blue-700">Running probe...</p>
+                  ) : probeResult.error ? (
+                    <p className="text-xs text-red-700">{probeResult.error}</p>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="text-xs">
+                        <span className="font-semibold">Status:</span> {probeResult.status} {probeResult.ok ? '✓' : '✗'}
+                      </div>
+                      {probeResult.reason && (
+                        <div className="text-xs">
+                          <span className="font-semibold">Reason:</span> {probeResult.reason}
+                        </div>
+                      )}
+                      {probeResult.using_redirect_uri && (
+                        <div className="text-xs">
+                          <span className="font-semibold">Using Redirect URI:</span>
+                          <pre className="mt-1 p-2 bg-white rounded text-blue-700 font-mono break-all">{probeResult.using_redirect_uri}</pre>
+                        </div>
+                      )}
+                      {probeResult.detail_raw && (
+                        <div className="text-xs">
+                          <span className="font-semibold">Detail:</span>
+                          <pre className="mt-1 p-2 bg-white rounded text-blue-700 font-mono whitespace-pre-wrap break-all max-h-40 overflow-y-auto">{probeResult.detail_raw}</pre>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="flex flex-col gap-3">
                 <Button onClick={handleTryAgain} className="w-full">
                   Try Again
