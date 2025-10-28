@@ -38,6 +38,8 @@ function parseOAuthState(stateParam: string): OAuthState | null {
 Deno.serve(async (req: Request) => {
   const requestUrl = new URL(req.url);
 
+  console.log("oauth_cb_begin", { method: req.method });
+
   if (req.method === "OPTIONS") {
     return new Response("ok", {
       status: 200,
@@ -69,6 +71,12 @@ Deno.serve(async (req: Request) => {
     // Handle POST (from frontend callback page)
     if (req.method === "POST") {
       const body = await req.json();
+
+      console.log("oauth_cb_params", {
+        hasCode: !!(body.code),
+        hasState: !!(body.state),
+        hasDryRun: !!(body.dry_run),
+      });
 
       // Dry-run mode for testing
       if (body.dry_run === true) {

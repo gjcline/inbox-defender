@@ -13,6 +13,15 @@ export function GoogleCallback() {
   const [message, setMessage] = useState('Completing Gmail connection...');
   const [errorDetail, setErrorDetail] = useState<string>('');
 
+  const supaUrl = import.meta.env.VITE_SUPABASE_URL;
+  const anon = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  const postUrl = `${supaUrl}/functions/v1/gmail-oauth-callback`;
+
+  const code = searchParams.get('code');
+  const state = searchParams.get('state');
+  const error = searchParams.get('error');
+  const showDebug = searchParams.get('debug') === '1';
+
   useEffect(() => {
     handleCallback();
   }, []);
@@ -26,10 +35,12 @@ export function GoogleCallback() {
 
   const handleCallback = async () => {
     try {
-      const code = searchParams.get('code');
-      const state = searchParams.get('state');
-      const error = searchParams.get('error');
+      // Check env vars
+      if (!supaUrl || !anon) {
+        throw new Error('env_missing: VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY');
+      }
 
+      // Check OAuth error param
       if (error) {
         throw new Error(error === 'access_denied'
           ? 'Access was denied. Please try connecting again.'
@@ -37,8 +48,9 @@ export function GoogleCallback() {
         );
       }
 
+      // Check required params
       if (!code || !state) {
-        throw new Error('No authorization code or state received from Google');
+        throw new Error('missing_params: no code/state on URL');
       }
 
       if (!user) {
@@ -47,16 +59,15 @@ export function GoogleCallback() {
 
       setMessage('Exchanging authorization code...');
 
-      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/gmail-oauth-callback`;
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-        'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
-      };
+      console.info('oauth_cb_fetch_begin', { postUrl, hasAnon: !!anon });
 
-      const res = await fetch(url, {
+      const res = await fetch(postUrl, {
         method: 'POST',
-        headers,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${anon}`,
+          'apikey': anon,
+        },
         body: JSON.stringify({ code, state }),
       });
 
@@ -95,8 +106,44 @@ export function GoogleCallback() {
     }
   };
 
+  // Env error takes precedence
+  if (!supaUrl || !anon) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
+        <div className="max-w-md w-full bg-white border border-red-200 rounded-2xl p-8 shadow-sm">
+          <div className="text-center">
+            <div className="flex items-center justify-center w-12 h-12 bg-red-100 rounded-full mx-auto mb-4">
+              <AlertCircle className="w-6 h-6 text-red-600" />
+            </div>
+            <h2 className="text-xl font-semibold text-gray-900 mb-2">Configuration Error</h2>
+            <p className="text-gray-600 mb-4">env_missing: VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY</p>
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-left">
+              <p className="text-xs text-red-700 font-mono">
+                VITE_SUPABASE_URL: {supaUrl ? '✓' : '✗'}<br />
+                VITE_SUPABASE_ANON_KEY: {anon ? '✓' : '✗'}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
+      {showDebug && (
+        <div className="fixed top-4 left-4 bg-white border-2 border-blue-500 rounded-lg p-4 shadow-lg max-w-md z-50">
+          <h3 className="text-sm font-bold text-blue-900 mb-2">🐛 Debug HUD</h3>
+          <div className="space-y-1 text-xs font-mono">
+            <div><span className="text-gray-600">postUrl:</span> <span className="text-blue-700">{postUrl}</span></div>
+            <div><span className="text-gray-600">hasAnon:</span> <span className="text-blue-700">{anon ? 'true' : 'false'}</span></div>
+            <div><span className="text-gray-600">code:</span> <span className="text-blue-700">{code ? `${code.slice(0, 20)}...` : 'null'}</span></div>
+            <div><span className="text-gray-600">state:</span> <span className="text-blue-700">{state ? state.slice(0, 12) : 'null'}</span></div>
+            <div><span className="text-gray-600">user:</span> <span className="text-blue-700">{user ? user.id.slice(0, 12) : 'null'}</span></div>
+          </div>
+        </div>
+      )}
+
       <div className="max-w-md w-full bg-white border border-gray-200 rounded-2xl p-8 shadow-sm">
         <div className="text-center">
           {status === 'processing' && (

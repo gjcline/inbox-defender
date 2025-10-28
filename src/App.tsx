@@ -43,11 +43,7 @@ function App() {
         />
         <Route
           path="/api/auth/google/callback"
-          element={
-            <ProtectedRoute>
-              <GoogleCallback />
-            </ProtectedRoute>
-          }
+          element={<GoogleCallback />}
         />
         <Route
           path="/admin/oauth-diagnostics"
