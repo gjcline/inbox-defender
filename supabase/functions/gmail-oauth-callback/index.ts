@@ -3,8 +3,8 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, apikey, x-client-info",
 };
 
 interface OAuthCallbackRequest {
@@ -39,7 +39,7 @@ Deno.serve(async (req: Request) => {
   const requestUrl = new URL(req.url);
 
   if (req.method === "OPTIONS") {
-    return new Response(null, {
+    return new Response("ok", {
       status: 200,
       headers: corsHeaders,
     });
@@ -334,13 +334,14 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // For POST requests (legacy), return JSON
+    // Return JSON success
     return new Response(
       JSON.stringify({
-        success: true,
+        ok: true,
         message: "Gmail connected successfully",
       }),
       {
+        status: 200,
         headers: {
           ...corsHeaders,
           "Content-Type": "application/json",
@@ -369,10 +370,12 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // For POST requests (legacy), return JSON error
+    // Return JSON error
     return new Response(
       JSON.stringify({
-        error: error instanceof Error ? error.message : "OAuth callback failed",
+        ok: false,
+        reason: "callback_error",
+        detail: error instanceof Error ? error.message : "OAuth callback failed",
       }),
       {
         status: 400,

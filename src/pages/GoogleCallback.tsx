@@ -47,41 +47,37 @@ export function GoogleCallback() {
 
       setMessage('Exchanging authorization code...');
 
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const response = await fetch(`${supabaseUrl}/functions/v1/gmail-oauth-callback`, {
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/gmail-oauth-callback`;
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+        'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+      };
+
+      const res = await fetch(url, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers,
         body: JSON.stringify({ code, state }),
       });
 
-      const result = await response.json();
+      const text = await res.text();
+      let json: any = null;
+      try {
+        json = JSON.parse(text);
+      } catch {
+        // Not JSON
+      }
 
-      if (!response.ok || !result.ok) {
-        const reason = result.reason || 'unknown';
-        const detail = result.detail || 'No additional details';
+      if (!res.ok) {
+        const reason = json?.reason ?? `http_${res.status}`;
+        const detail = (json?.detail || text || '').toString().slice(0, 400);
+        throw new Error(`${reason}: ${detail}`);
+      }
 
-        console.error('OAuth callback failed:', { reason, detail });
-
-        if (reason === 'client_id_mismatch') {
-          throw new Error(`Configuration Error: ${detail}`);
-        }
-
-        if (reason === 'token_exchange_failed') {
-          const firstLine = detail.split('\n')[0];
-          throw new Error(`Token Exchange Failed: ${firstLine}`);
-        }
-
-        if (reason === 'invalid_state') {
-          throw new Error('Invalid OAuth state. Please try connecting again.');
-        }
-
-        if (reason === 'missing_params') {
-          throw new Error('Missing required parameters. Please try again.');
-        }
-
-        throw new Error(`Connection failed: ${reason}`);
+      if (!json || !json.ok) {
+        const reason = json?.reason || 'unknown';
+        const detail = (json?.detail || 'No additional details').slice(0, 400);
+        throw new Error(`${reason}: ${detail}`);
       }
 
       setStatus('success');
@@ -90,14 +86,12 @@ export function GoogleCallback() {
       setTimeout(() => {
         navigate('/dashboard?gmail_connected=1');
       }, 1500);
-    } catch (error) {
-      console.error('OAuth callback error:', error);
+    } catch (err: any) {
+      const msg = (err?.message || String(err));
+      console.error('oauth_cb_fetch_error', msg);
       setStatus('error');
-      const errorMessage = error instanceof Error ? error.message : 'Failed to connect Gmail';
-      setMessage(errorMessage);
-      setErrorDetail(errorMessage);
-
-      // Don't auto-redirect on error
+      setMessage(msg);
+      setErrorDetail(msg);
     }
   };
 

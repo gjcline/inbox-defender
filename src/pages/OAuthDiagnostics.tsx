@@ -40,6 +40,8 @@ export function OAuthDiagnostics() {
   const [loadingServerConfig, setLoadingServerConfig] = useState(true);
   const [dryRunTest, setDryRunTest] = useState<TestResult | null>(null);
   const [testingDryRun, setTestingDryRun] = useState(false);
+  const [pingTest, setPingTest] = useState<TestResult | null>(null);
+  const [testingPing, setTestingPing] = useState(false);
 
   useEffect(() => {
     loadConnectionStatus();
@@ -221,6 +223,54 @@ export function OAuthDiagnostics() {
       });
     } finally {
       setTestingDryRun(false);
+    }
+  };
+
+  const runPingTest = async () => {
+    setTestingPing(true);
+    setPingTest(null);
+
+    try {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+      const response = await fetch(`${supabaseUrl}/functions/v1/gmail-oauth-callback`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${anonKey}`,
+          'apikey': anonKey,
+        },
+        body: JSON.stringify({ dry_run: true }),
+      });
+
+      const text = await response.text();
+      let json: any = null;
+      try {
+        json = JSON.parse(text);
+      } catch {
+        // Not JSON
+      }
+
+      if (!response.ok) {
+        const reason = json?.reason ?? `http_${response.status}`;
+        const detail = (json?.detail || text || '').toString().slice(0, 400);
+        throw new Error(`${reason}: ${detail}`);
+      }
+
+      setPingTest({
+        success: true,
+        data: json || { raw: text },
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      setPingTest({
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+        timestamp: new Date().toISOString(),
+      });
+    } finally {
+      setTestingPing(false);
     }
   };
 
@@ -468,9 +518,61 @@ export function OAuthDiagnostics() {
               <div className="border-t border-gray-200 pt-4">
                 <div className="flex items-center justify-between mb-3">
                   <div>
+                    <h3 className="text-sm font-medium text-gray-900">Ping OAuth Callback</h3>
+                    <p className="text-xs text-gray-600 mt-0.5">
+                      Test edge function reachability with full headers (CORS, preflight, auth)
+                    </p>
+                  </div>
+                  <Button
+                    onClick={runPingTest}
+                    disabled={testingPing}
+                    size="sm"
+                  >
+                    <Play className="w-4 h-4 mr-2" />
+                    {testingPing ? 'Testing...' : 'Ping Callback'}
+                  </Button>
+                </div>
+                {pingTest && (
+                  <div className={`p-4 rounded-lg border ${
+                    pingTest.success
+                      ? 'bg-green-50 border-green-200'
+                      : 'bg-red-50 border-red-200'
+                  }`}>
+                    <div className="flex items-start gap-3 mb-2">
+                      {pingTest.success ? (
+                        <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
+                      ) : (
+                        <XCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
+                      )}
+                      <div className="flex-1">
+                        <p className={`text-sm font-medium ${
+                          pingTest.success ? 'text-green-900' : 'text-red-900'
+                        }`}>
+                          {pingTest.success ? 'Success - Function Reachable' : 'Failed - Cannot Reach Function'}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          {new Date(pingTest.timestamp).toLocaleString()}
+                        </p>
+                      </div>
+                    </div>
+                    {pingTest.success && pingTest.data && (
+                      <pre className="mt-3 p-3 bg-white border border-gray-200 rounded text-xs overflow-x-auto">
+                        {JSON.stringify(pingTest.data, null, 2)}
+                      </pre>
+                    )}
+                    {!pingTest.success && pingTest.error && (
+                      <p className="mt-2 text-sm text-red-700">{pingTest.error}</p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="border-t border-gray-200 pt-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
                     <h3 className="text-sm font-medium text-gray-900">Dry-Run Test</h3>
                     <p className="text-xs text-gray-600 mt-0.5">
-                      Test OAuth callback without Google (confirms CORS, routing, secrets)
+                      Test OAuth callback without Google (no auth headers)
                     </p>
                   </div>
                   <Button
