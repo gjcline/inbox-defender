@@ -36,11 +36,7 @@ function App() {
         />
         <Route
           path="/auth/gmail/callback"
-          element={
-            <ProtectedRoute>
-              <GmailCallback />
-            </ProtectedRoute>
-          }
+          element={<GmailCallback />}
         />
         <Route
           path="/api/auth/google/callback"
@@ -48,11 +44,7 @@ function App() {
         />
         <Route
           path="/auth/nylas/callback"
-          element={
-            <ProtectedRoute>
-              <NylasCallback />
-            </ProtectedRoute>
-          }
+          element={<NylasCallback />}
         />
         <Route
           path="/admin/oauth-diagnostics"
