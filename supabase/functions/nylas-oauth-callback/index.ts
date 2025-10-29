@@ -143,15 +143,32 @@ Deno.serve(async (req: Request) => {
     // Exchange code for Nylas grant
     // Nylas v3 API requires Basic Auth (client_id:client_secret)
     // https://developer.nylas.com/docs/v3/auth/hosted-authentication/#exchange-authorization-code-for-access-token
+
+    // DEBUG: Log credentials being used
+    console.log(`[${reqId}] === DEBUG: Token Exchange Credentials ===`);
+    console.log(`[${reqId}] Client ID:`, nylasClientId);
+    console.log(`[${reqId}] Client Secret exists:`, !!nylasClientSecret);
+    console.log(`[${reqId}] Client Secret length:`, nylasClientSecret?.length);
+    console.log(`[${reqId}] Client Secret first 10 chars:`, nylasClientSecret?.substring(0, 10) + '...');
+    console.log(`[${reqId}] API URI:`, nylasApiUri);
+    console.log(`[${reqId}] Redirect URI:`, redirectUri);
+    console.log(`[${reqId}] Code received (first 20):`, code.substring(0, 20) + '...');
+    console.log(`[${reqId}] Code length:`, code.length);
+
     const credentials = `${nylasClientId}:${nylasClientSecret}`;
     const basicAuth = btoa(credentials);
 
-    console.log(`[${reqId}] token_exchange_request`, {
-      endpoint: `${nylasApiUri}/v3/connect/token`,
-      hasCode: !!code,
-      hasRedirectUri: !!redirectUri,
-      authMethod: 'Basic',
-    });
+    console.log(`[${reqId}] Credentials string length:`, credentials.length);
+    console.log(`[${reqId}] Basic Auth (first 50 chars):`, basicAuth.substring(0, 50) + '...');
+    console.log(`[${reqId}] Authorization header:`, `Basic ${basicAuth.substring(0, 50)}...`);
+
+    const requestBody = {
+      code: code,
+      redirect_uri: redirectUri,
+      grant_type: "authorization_code",
+    };
+
+    console.log(`[${reqId}] Request body:`, JSON.stringify(requestBody, null, 2));
 
     const tokenResponse = await fetch(`${nylasApiUri}/v3/connect/token`, {
       method: "POST",
@@ -159,18 +176,19 @@ Deno.serve(async (req: Request) => {
         "Authorization": `Basic ${basicAuth}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        code: code,
-        redirect_uri: redirectUri,
-        grant_type: "authorization_code",
-      }),
+      body: JSON.stringify(requestBody),
     });
 
+    console.log(`[${reqId}] Response status:`, tokenResponse.status);
+    console.log(`[${reqId}] Response headers:`, JSON.stringify(Object.fromEntries(tokenResponse.headers.entries())));
+
+    const responseText = await tokenResponse.text();
+    console.log(`[${reqId}] Response body:`, responseText);
+
     if (!tokenResponse.ok) {
-      const errTxt = await tokenResponse.text();
       console.error(`[${reqId}] nylas_token_exchange_failed`, {
         status: tokenResponse.status,
-        body: errTxt.slice(0, 400),
+        body: responseText.slice(0, 400),
       });
 
       return new Response(
@@ -178,7 +196,7 @@ Deno.serve(async (req: Request) => {
           ok: false,
           reason: "token_exchange_failed",
           hint: "Nylas rejected the authorization code",
-          detail: errTxt.slice(0, 500),
+          detail: responseText.slice(0, 500),
           req_id: reqId,
         }),
         {
@@ -188,7 +206,14 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const nylasTokenData = await tokenResponse.json();
+    let nylasTokenData;
+    try {
+      nylasTokenData = JSON.parse(responseText);
+    } catch (parseError) {
+      console.error(`[${reqId}] Failed to parse Nylas response:`, parseError);
+      throw new Error(`Invalid JSON response from Nylas: ${responseText.slice(0, 200)}`);
+    }
+
     const { grant_id, email, provider } = nylasTokenData;
 
     console.log(`[${reqId}] nylas_token_exchange_success`, {
