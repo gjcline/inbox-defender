@@ -141,16 +141,25 @@ Deno.serve(async (req: Request) => {
     console.log(`[${reqId}] nylas_token_exchange_begin`);
 
     // Exchange code for Nylas grant
+    // Nylas v3 API requires Basic Auth (client_id:client_secret)
     // https://developer.nylas.com/docs/v3/auth/hosted-authentication/#exchange-authorization-code-for-access-token
+    const credentials = `${nylasClientId}:${nylasClientSecret}`;
+    const basicAuth = btoa(credentials);
+
+    console.log(`[${reqId}] token_exchange_request`, {
+      endpoint: `${nylasApiUri}/v3/connect/token`,
+      hasCode: !!code,
+      hasRedirectUri: !!redirectUri,
+      authMethod: 'Basic',
+    });
+
     const tokenResponse = await fetch(`${nylasApiUri}/v3/connect/token`, {
       method: "POST",
       headers: {
+        "Authorization": `Basic ${basicAuth}`,
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${nylasApiKey}`,
       },
       body: JSON.stringify({
-        client_id: nylasClientId,
-        client_secret: nylasClientSecret,
         code: code,
         redirect_uri: redirectUri,
         grant_type: "authorization_code",
