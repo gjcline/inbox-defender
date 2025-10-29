@@ -4,6 +4,7 @@ import { Dashboard } from './pages/Dashboard';
 import { Settings } from './pages/Settings';
 import { GmailCallback } from './pages/GmailCallback';
 import { GoogleCallback } from './pages/GoogleCallback';
+import { NylasCallback } from './pages/NylasCallback';
 import { OAuthDiagnostics } from './pages/OAuthDiagnostics';
 import { Terms } from './pages/Terms';
 import { Privacy } from './pages/Privacy';
@@ -44,6 +45,14 @@ function App() {
         <Route
           path="/api/auth/google/callback"
           element={<GoogleCallback />}
+        />
+        <Route
+          path="/auth/nylas/callback"
+          element={
+            <ProtectedRoute>
+              <NylasCallback />
+            </ProtectedRoute>
+          }
         />
         <Route
           path="/admin/oauth-diagnostics"

@@ -12,6 +12,7 @@ interface GmailConnection {
   refresh_token: string;
   access_token: string;
   token_expires_at: string;
+  oauth_provider?: string;
 }
 
 export async function refreshGmailToken(
@@ -20,7 +21,7 @@ export async function refreshGmailToken(
   try {
     const { data: connection, error: fetchError } = await supabase
       .from('gmail_connections')
-      .select('id, refresh_token, access_token, token_expires_at')
+      .select('id, refresh_token, access_token, token_expires_at, oauth_provider')
       .eq('id', connectionId)
       .maybeSingle();
 
@@ -31,6 +32,17 @@ export async function refreshGmailToken(
       };
     }
 
+    // Nylas handles token refresh server-side, no client-side refresh needed
+    if (connection.oauth_provider === 'nylas') {
+      console.log('[Nylas] Token refresh handled by Nylas server-side');
+      return {
+        success: true,
+        accessToken: connection.access_token, // This is the grant_id for Nylas
+        expiresAt: connection.token_expires_at,
+      };
+    }
+
+    // Google OAuth token refresh flow
     const expiresAt = new Date(connection.token_expires_at);
     const now = new Date();
     const twoMinutes = 2 * 60 * 1000;

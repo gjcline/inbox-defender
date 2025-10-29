@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Mail, CheckCircle, AlertCircle, RefreshCw, Unplug } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { buildAuthUrl } from '../../lib/oauthConfig';
+import { buildNylasAuthUrl } from '../../lib/nylasOauthConfig';
 
 interface GmailConnectProps {
   userId: string;
@@ -11,6 +12,7 @@ interface ConnectionData {
   isConnected: boolean;
   emailAddress: string;
   lastSyncAt: string | null;
+  provider?: string;
 }
 
 export function GmailConnect({ userId }: GmailConnectProps) {
@@ -32,7 +34,7 @@ export function GmailConnect({ userId }: GmailConnectProps) {
     try {
       const { data: connectionData, error: connError } = await supabase
         .from('gmail_connections')
-        .select('is_active, email, last_sync_at')
+        .select('is_active, email, last_sync_at, oauth_provider')
         .eq('user_id', userId)
         .eq('is_active', true)
         .maybeSingle();
@@ -44,12 +46,14 @@ export function GmailConnect({ userId }: GmailConnectProps) {
           isConnected: true,
           emailAddress: connectionData.email || '',
           lastSyncAt: connectionData.last_sync_at,
+          provider: connectionData.oauth_provider || 'google',
         });
       } else {
         setConnectionData({
           isConnected: false,
           emailAddress: '',
           lastSyncAt: null,
+          provider: undefined,
         });
       }
     } catch (err) {
@@ -58,6 +62,7 @@ export function GmailConnect({ userId }: GmailConnectProps) {
         isConnected: false,
         emailAddress: '',
         lastSyncAt: null,
+        provider: undefined,
       });
     } finally {
       setLoading(false);
@@ -97,13 +102,23 @@ export function GmailConnect({ userId }: GmailConnectProps) {
     }
   };
 
-  const handleConnect = async () => {
+  const handleConnectNylas = async () => {
+    try {
+      const authUrl = buildNylasAuthUrl(userId);
+      window.location.href = authUrl;
+    } catch (error) {
+      console.error('Failed to build Nylas OAuth URL:', error);
+      setError(error instanceof Error ? error.message : 'Failed to start Nylas OAuth flow');
+    }
+  };
+
+  const handleConnectGoogle = async () => {
     try {
       const authUrl = buildAuthUrl(userId);
       window.location.href = authUrl;
     } catch (error) {
-      console.error('Failed to build OAuth URL:', error);
-      setError(error instanceof Error ? error.message : 'Failed to start OAuth flow');
+      console.error('Failed to build Google OAuth URL:', error);
+      setError(error instanceof Error ? error.message : 'Failed to start Google OAuth flow');
     }
   };
 
@@ -162,7 +177,14 @@ export function GmailConnect({ userId }: GmailConnectProps) {
             <p className="text-sm text-zinc-400 mb-1">
               {connectionData.emailAddress} is being monitored and protected
             </p>
-            <p className="text-xs text-zinc-500">Last sync: {lastSyncText}</p>
+            <p className="text-xs text-zinc-500">
+              Last sync: {lastSyncText}
+              {connectionData.provider && (
+                <span className="ml-2 px-2 py-0.5 bg-zinc-800 rounded text-zinc-400">
+                  via {connectionData.provider === 'nylas' ? 'Nylas' : 'Google'}
+                </span>
+              )}
+            </p>
 
             {syncMessage && (
               <div className="flex items-center gap-2 mt-3 text-sm text-emerald-400">
@@ -225,12 +247,20 @@ export function GmailConnect({ userId }: GmailConnectProps) {
               <span>{error}</span>
             </div>
           )}
-          <button
-            onClick={handleConnect}
-            className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-lg transition-colors text-sm font-medium"
-          >
-            Connect Gmail
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={handleConnectNylas}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors text-sm font-medium"
+            >
+              Connect via Nylas
+            </button>
+            <button
+              onClick={handleConnectGoogle}
+              className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-lg transition-colors text-sm font-medium"
+            >
+              Connect via Google
+            </button>
+          </div>
         </div>
       </div>
     </div>
