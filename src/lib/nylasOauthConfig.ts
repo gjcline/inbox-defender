@@ -16,7 +16,12 @@ function base64urlEncode(str: string): string {
 
 export function buildNylasAuthUrl(userId: string): string {
   const clientId = import.meta.env.VITE_NYLAS_CLIENT_ID;
-  const redirectUri = import.meta.env.VITE_NYLAS_REDIRECT_URI;
+
+  // Determine redirect URI based on environment
+  const isDev = window.location.hostname === 'localhost';
+  const redirectUri = isDev
+    ? import.meta.env.VITE_NYLAS_REDIRECT_URI_DEV
+    : import.meta.env.VITE_NYLAS_REDIRECT_URI_PROD;
 
   if (!clientId || clientId === 'undefined') {
     console.error('❌ VITE_NYLAS_CLIENT_ID is not configured!');
