@@ -140,50 +140,71 @@ Deno.serve(async (req: Request) => {
 
     console.log(`[${reqId}] nylas_token_exchange_begin`);
 
-    // Exchange code for Nylas grant
-    // Nylas v3 API requires Basic Auth (client_id:client_secret)
-    // https://developer.nylas.com/docs/v3/auth/hosted-authentication/#exchange-authorization-code-for-access-token
-
     // DEBUG: Log credentials being used
-    console.log(`[${reqId}] === DEBUG: Token Exchange Credentials ===`);
-    console.log(`[${reqId}] Client ID:`, nylasClientId);
-    console.log(`[${reqId}] Client Secret exists:`, !!nylasClientSecret);
-    console.log(`[${reqId}] Client Secret length:`, nylasClientSecret?.length);
-    console.log(`[${reqId}] Client Secret first 10 chars:`, nylasClientSecret?.substring(0, 10) + '...');
-    console.log(`[${reqId}] API URI:`, nylasApiUri);
-    console.log(`[${reqId}] Redirect URI:`, redirectUri);
-    console.log(`[${reqId}] Code received (first 20):`, code.substring(0, 20) + '...');
-    console.log(`[${reqId}] Code length:`, code.length);
+    console.log('=== DEBUG: Token Exchange Attempt ===');
+    console.log('Client ID:', Deno.env.get('NYLAS_CLIENT_ID'));
+    console.log('Client Secret exists:', !!Deno.env.get('NYLAS_CLIENT_SECRET'));
+    console.log('Client Secret length:', Deno.env.get('NYLAS_CLIENT_SECRET')?.length);
+    console.log('API URI:', Deno.env.get('NYLAS_API_URI'));
+    console.log('Redirect URI:', redirectUri);
+    console.log('Code received:', code.substring(0, 20) + '...');
 
-    const credentials = `${nylasClientId}:${nylasClientSecret}`;
-    const basicAuth = btoa(credentials);
+    const clientId = Deno.env.get('NYLAS_CLIENT_ID');
+    const clientSecret = Deno.env.get('NYLAS_CLIENT_SECRET');
+    const apiKey = Deno.env.get('NYLAS_API_KEY');
 
-    console.log(`[${reqId}] Credentials string length:`, credentials.length);
-    console.log(`[${reqId}] Basic Auth (first 50 chars):`, basicAuth.substring(0, 50) + '...');
-    console.log(`[${reqId}] Authorization header:`, `Basic ${basicAuth.substring(0, 50)}...`);
+    console.log('API Key exists:', !!apiKey);
+    console.log('API Key length:', apiKey?.length);
+    console.log('API Key (first 20 chars):', apiKey?.substring(0, 20) + '...');
 
-    const requestBody = {
-      code: code,
-      redirect_uri: redirectUri,
-      grant_type: "authorization_code",
-    };
+    // TRY BEARER AUTH WITH API KEY FIRST (for Nylas sandbox)
+    // According to error reports, Nylas sandbox might require Bearer auth instead of Basic
+    console.log('=== ATTEMPT 1: Bearer Auth with API Key ===');
 
-    console.log(`[${reqId}] Request body:`, JSON.stringify(requestBody, null, 2));
-
-    const tokenResponse = await fetch(`${nylasApiUri}/v3/connect/token`, {
-      method: "POST",
+    let tokenResponse = await fetch(`${nylasApiUri}/v3/connect/token`, {
+      method: 'POST',
       headers: {
-        "Authorization": `Basic ${basicAuth}`,
-        "Content-Type": "application/json",
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
       },
-      body: JSON.stringify(requestBody),
+      body: JSON.stringify({
+        client_id: clientId,
+        code: code,
+        redirect_uri: redirectUri,
+      }),
     });
 
-    console.log(`[${reqId}] Response status:`, tokenResponse.status);
-    console.log(`[${reqId}] Response headers:`, JSON.stringify(Object.fromEntries(tokenResponse.headers.entries())));
+    console.log('Response status:', tokenResponse.status);
+    let responseText = await tokenResponse.text();
+    console.log('Response body:', responseText);
 
-    const responseText = await tokenResponse.text();
-    console.log(`[${reqId}] Response body:`, responseText);
+    // If Bearer auth fails, try Basic Auth as fallback
+    if (!tokenResponse.ok) {
+      console.log('=== Bearer auth failed, trying ATTEMPT 2: Basic Auth ===');
+
+      const credentials = `${clientId}:${clientSecret}`;
+      const basicAuth = btoa(credentials);
+
+      console.log('Basic Auth (first 50 chars):', basicAuth.substring(0, 50) + '...');
+      console.log('Authorization header:', `Basic ${basicAuth.substring(0, 50)}...`);
+
+      tokenResponse = await fetch(`${nylasApiUri}/v3/connect/token`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Basic ${basicAuth}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          code: code,
+          redirect_uri: redirectUri,
+          grant_type: "authorization_code",
+        }),
+      });
+
+      console.log('Response status:', tokenResponse.status);
+      responseText = await tokenResponse.text();
+      console.log('Response body:', responseText);
+    }
 
     if (!tokenResponse.ok) {
       console.error(`[${reqId}] nylas_token_exchange_failed`, {
@@ -191,19 +212,7 @@ Deno.serve(async (req: Request) => {
         body: responseText.slice(0, 400),
       });
 
-      return new Response(
-        JSON.stringify({
-          ok: false,
-          reason: "token_exchange_failed",
-          hint: "Nylas rejected the authorization code",
-          detail: responseText.slice(0, 500),
-          req_id: reqId,
-        }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
+      throw new Error(`Token exchange failed: ${responseText}`);
     }
 
     let nylasTokenData;
