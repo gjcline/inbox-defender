@@ -50,11 +50,12 @@ Deno.serve(async (req: Request) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const nylasClientId = Deno.env.get("NYLAS_CLIENT_ID")!;
+    const nylasClientSecret = Deno.env.get("NYLAS_CLIENT_SECRET")!;
     const nylasApiKey = Deno.env.get("NYLAS_API_KEY")!;
     const nylasApiUri = Deno.env.get("NYLAS_API_URI") || "https://api.us.nylas.com";
     const redirectUri = Deno.env.get("NYLAS_REDIRECT_URI")!;
 
-    if (!nylasClientId || !nylasApiKey) {
+    if (!nylasClientId || !nylasClientSecret || !nylasApiKey) {
       throw new Error("Nylas credentials not configured");
     }
 
@@ -149,6 +150,7 @@ Deno.serve(async (req: Request) => {
       },
       body: JSON.stringify({
         client_id: nylasClientId,
+        client_secret: nylasClientSecret,
         code: code,
         redirect_uri: redirectUri,
         grant_type: "authorization_code",
