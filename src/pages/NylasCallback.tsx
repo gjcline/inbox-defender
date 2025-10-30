@@ -21,6 +21,8 @@ export function NylasCallback() {
   const code = searchParams.get('code');
   const state = searchParams.get('state');
   const error = searchParams.get('error');
+  const errorCode = searchParams.get('error_code');
+  const errorDescription = searchParams.get('error_description');
 
   useEffect(() => {
     handleCallback();
@@ -52,15 +54,28 @@ export function NylasCallback() {
       }
 
       if (error) {
-        throw new Error(error === 'access_denied'
+        console.error('Nylas OAuth Error:', {
+          error,
+          errorCode,
+          errorDescription,
+          fullUrl: window.location.href
+        });
+
+        const friendlyMessage = error === 'access_denied'
           ? 'Access was denied. Please try connecting again.'
-          : `OAuth error: ${error}`
-        );
+          : errorDescription
+            ? `${errorDescription} (Error ${errorCode || error})`
+            : `OAuth error: ${error}`;
+
+        throw new Error(friendlyMessage);
       }
 
       if (!code || !state) {
         throw new Error('missing_params: no code/state on URL');
       }
+
+      console.log('Authorization code received:', code?.substring(0, 20) + '...');
+      console.log('State parameter:', state?.substring(0, 30) + '...');
 
       setMessage('Exchanging authorization code with Nylas...');
 
