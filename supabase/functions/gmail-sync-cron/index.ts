@@ -179,7 +179,8 @@ async function ensureValidToken(
 }
 
 Deno.serve(async (req: Request) => {
-  console.log("cron_begin");
+  console.log("=== Gmail Sync Cron Started ===");
+  console.log("Timestamp:", new Date().toISOString());
 
   if (req.method === "OPTIONS") {
     return new Response(null, {
@@ -203,10 +204,10 @@ Deno.serve(async (req: Request) => {
     // Advisory lock to prevent overlapping runs
     const { data: tryLock } = await supabase.rpc("pg_try_advisory_lock", { key: ADVISORY_LOCK_KEY });
 
-    console.log("lock_attempt", { acquired: !!tryLock });
+    console.log("Lock attempt result:", !!tryLock);
 
     if (!tryLock) {
-      console.log("lock_held", "another sync is already running");
+      console.log("Lock already held - another sync is running");
       return new Response(
         JSON.stringify({ ok: true, reason: "lock_held" }),
         {
@@ -217,7 +218,7 @@ Deno.serve(async (req: Request) => {
     }
 
     lockAcquired = true;
-    console.log("lock_acquired", { key: ADVISORY_LOCK_KEY });
+    console.log("Lock acquired successfully");
 
     // Create sync_history row at start
     const { data: syncHistory, error: syncHistoryError } = await supabase
@@ -241,7 +242,7 @@ Deno.serve(async (req: Request) => {
     }
 
     syncHistoryId = syncHistory.id;
-    console.log(`Sync started, history ID: ${syncHistoryId}`);
+    console.log(`Sync history created: ${syncHistoryId}`);
 
     // Fetch active connections
     const { data: connections, error: connectionsError } = await supabase
@@ -253,9 +254,11 @@ Deno.serve(async (req: Request) => {
       throw connectionsError;
     }
 
+    console.log(`Active connections found: ${connections?.length || 0}`);
+
     // Guard: no active connections
     if (!connections || connections.length === 0) {
-      console.log("no_active_connections", "marking sync_history as completed with zeros");
+      console.log("No active connections found");
 
       if (syncHistoryId) {
         await supabase
@@ -280,8 +283,6 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    console.log(`Found ${connections.length} active connection(s)`);
-
     const results = [];
     let totalFetched = 0;
     let totalPosted = 0;
@@ -290,16 +291,19 @@ Deno.serve(async (req: Request) => {
 
     for (const connection of connections) {
       try {
-        console.log(`[${connection.id}] Processing connection for user ${connection.user_id}`);
+        console.log(`Processing connection: ${connection.email}`);
+        console.log(`Access token exists: ${!!connection.access_token}`);
+        console.log(`Token expires at: ${connection.token_expires_at}`);
+        console.log(`Last sync: ${connection.last_sync_at}`);
 
         // Ensure token is valid before making Gmail API calls
         const tokenResult = await ensureValidToken(connection, supabase);
 
         if (!tokenResult.success) {
-          console.error(`[${connection.id}] Token validation failed:`, tokenResult.error);
+          console.error(`Token validation failed: ${tokenResult.error}`);
 
           if (tokenResult.requiresReconnect) {
-            console.log(`[${connection.id}] Requires reconnect, skipping`);
+            console.log(`Connection requires reconnect, skipping`);
           }
 
           totalFailures++;
@@ -313,7 +317,7 @@ Deno.serve(async (req: Request) => {
         }
 
         if (tokenResult.refreshed) {
-          console.log(`[${connection.id}] Token refreshed`);
+          console.log(`Token refreshed successfully`);
           totalRefreshed++;
         }
 
@@ -336,7 +340,7 @@ Deno.serve(async (req: Request) => {
         const maxResults = isFirstSync ? 500 : 100;
 
         const gmailQuery = `after:${afterDate} in:inbox`;
-        console.log(`[${connection.id}] Query: "${gmailQuery}", maxResults: ${maxResults}`);
+        console.log(`Gmail query: "${gmailQuery}", maxResults: ${maxResults}`);
 
         // Fetch messages from Gmail
         const gmailResponse = await fetch(
@@ -350,7 +354,7 @@ Deno.serve(async (req: Request) => {
 
         if (!gmailResponse.ok) {
           const errorText = await gmailResponse.text();
-          console.error(`[${connection.id}] Gmail API error:`, errorText);
+          console.error(`Gmail API error: ${errorText}`);
           totalFailures++;
           continue;
         }
@@ -358,7 +362,7 @@ Deno.serve(async (req: Request) => {
         const gmailData = await gmailResponse.json();
         const messageIds = gmailData.messages || [];
 
-        console.log(`[${connection.id}] Found ${messageIds.length} message(s)`);
+        console.log(`Found ${messageIds.length} message(s)`);
 
         if (messageIds.length === 0) {
           await supabase
@@ -438,7 +442,7 @@ Deno.serve(async (req: Request) => {
               .maybeSingle();
 
             if (insertError && !insertError.message.includes("duplicate")) {
-              console.error(`[${connection.id}] Error inserting email:`, insertError);
+              console.error(`Error inserting email: ${insertError.message}`);
             } else if (!insertError) {
               emailsProcessed++;
             }
@@ -487,12 +491,13 @@ Deno.serve(async (req: Request) => {
                   .eq("user_id", connection.user_id)
                   .eq("email_address", senderEmail);
               } catch (labelError) {
-                console.error(`[${connection.id}] Error applying label:`, labelError);
+                console.error(`Error applying label: ${labelError}`);
               }
             }
           }
         }
 
+        console.log(`Processed ${emailsProcessed} emails`);
         totalFetched += emailsProcessed;
 
         // Send to webhook in batches of 25
@@ -506,7 +511,7 @@ Deno.serve(async (req: Request) => {
             batches.push(emailDetails.slice(i, i + BATCH_SIZE));
           }
 
-          console.log(`[${connection.id}] Sending ${emailDetails.length} emails in ${batches.length} batch(es)`);
+          console.log(`Sending ${emailDetails.length} emails in ${batches.length} batch(es)`);
 
           for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
             const batch = batches[batchIndex];
@@ -548,13 +553,7 @@ Deno.serve(async (req: Request) => {
                     const sentCount = batch.length;
 
                     if (resultsCount < sentCount) {
-                      console.warn('partial_results', {
-                        connection_id: connection.id,
-                        batch_number: batchIndex + 1,
-                        sent: sentCount,
-                        received: resultsCount,
-                        missing: sentCount - resultsCount,
-                      });
+                      console.warn(`Partial results: sent ${sentCount}, received ${resultsCount}`);
                     }
 
                     // Process results
@@ -577,29 +576,30 @@ Deno.serve(async (req: Request) => {
                           .eq("gmail_message_id", email.message_id)
                           .eq("user_id", connection.user_id);
                       } else {
-                        // Mark as pending if no result received
-                        console.log(`[${connection.id}] No result for message ${email.message_id}, keeping as pending`);
+                        console.log(`No result for message ${email.message_id}`);
                       }
                     }
 
-                    console.log(`[${connection.id}] Batch ${batchIndex + 1}/${batches.length}: Posted ${batch.length}, received ${resultsCount} results`);
+                    console.log(`Batch ${batchIndex + 1}/${batches.length}: Posted ${batch.length}, received ${resultsCount} results`);
                   } else {
-                    console.warn(`[${connection.id}] Batch ${batchIndex + 1}: Make response missing results array`);
+                    console.warn(`Batch ${batchIndex + 1}: Make response missing results array`);
                   }
                 } catch (parseError) {
-                  console.error(`[${connection.id}] Failed to parse Make response:`, parseError);
+                  console.error(`Failed to parse Make response: ${parseError}`);
                 }
               } else {
                 const errorText = await webhookResponse.text();
-                console.error(`[${connection.id}] Webhook error (batch ${batchIndex + 1}):`, errorText);
+                console.error(`Webhook error (batch ${batchIndex + 1}): ${errorText}`);
                 totalFailures++;
               }
             } catch (webhookError) {
-              console.error(`[${connection.id}] Webhook exception (batch ${batchIndex + 1}):`, webhookError);
+              console.error(`Webhook exception (batch ${batchIndex + 1}): ${webhookError}`);
               totalFailures++;
             }
           }
         }
+
+        console.log(`Sync completed for ${connection.email}`);
 
         await supabase
           .from("gmail_connections")
@@ -615,7 +615,7 @@ Deno.serve(async (req: Request) => {
           token_refreshed: tokenResult.refreshed,
         });
       } catch (error) {
-        console.error(`[${connection.id}] Error processing connection:`, error);
+        console.error(`Error processing connection: ${error}`);
         totalFailures++;
         results.push({
           user_id: connection.user_id,
@@ -638,17 +638,8 @@ Deno.serve(async (req: Request) => {
       })
       .eq("id", syncHistoryId);
 
-    // Structured log for observability
-    console.log(
-      JSON.stringify({
-        event: "sync_complete",
-        fetched: totalFetched,
-        posted: totalPosted,
-        refreshed: totalRefreshed,
-        failures: totalFailures,
-        duration_ms: Date.now() - syncStartTime.getTime(),
-      })
-    );
+    console.log("=== Sync Complete ===");
+    console.log(`Fetched: ${totalFetched}, Posted: ${totalPosted}, Refreshed: ${totalRefreshed}, Failures: ${totalFailures}`);
 
     return new Response(
       JSON.stringify({
@@ -666,10 +657,7 @@ Deno.serve(async (req: Request) => {
       }
     );
   } catch (error) {
-    console.error("sync_failed", {
-      message: String(error),
-      stack: error instanceof Error ? error.stack : undefined,
-    });
+    console.error("Sync failed:", error);
 
     // Update sync_history to error state
     if (syncHistoryId) {
@@ -707,11 +695,11 @@ Deno.serve(async (req: Request) => {
     if (lockAcquired) {
       try {
         await supabase.rpc("pg_advisory_unlock", { key: ADVISORY_LOCK_KEY });
-        console.log("lock_released", { key: ADVISORY_LOCK_KEY });
+        console.log("Lock released");
       } catch (unlockError) {
-        console.error("lock_release_failed", unlockError);
+        console.error("Lock release failed:", unlockError);
       }
     }
-    console.log("cron_end");
+    console.log("=== Gmail Sync Cron Ended ===");
   }
 });
