@@ -48,7 +48,6 @@ export function buildNylasAuthUrl(userId: string): string {
   authUrl.searchParams.append('redirect_uri', redirectUri);
   authUrl.searchParams.append('response_type', 'code');
   authUrl.searchParams.append('access_type', 'offline');
-  authUrl.searchParams.append('prompt', 'consent');
   authUrl.searchParams.append('state', state);
 
   // Nylas-specific: provider selection
