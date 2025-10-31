@@ -291,10 +291,16 @@ Deno.serve(async (req: Request) => {
 
     for (const connection of connections) {
       try {
-        console.log(`Processing connection: ${connection.email}`);
+        console.log(`\n========================================`);
+        console.log(`Processing connection for user: ${connection.user_id}`);
+        console.log(`Connection ID: ${connection.id}`);
+        console.log(`Email: ${connection.email}`);
+        console.log(`Mailbox ID: ${connection.mailbox_id}`);
         console.log(`Access token exists: ${!!connection.access_token}`);
         console.log(`Token expires at: ${connection.token_expires_at}`);
         console.log(`Last sync: ${connection.last_sync_at}`);
+        console.log(`OAuth provider: ${connection.oauth_provider || 'google'}`);
+        console.log(`========================================\n`);
 
         // Ensure token is valid before making Gmail API calls
         const tokenResult = await ensureValidToken(connection, supabase);
@@ -381,17 +387,24 @@ Deno.serve(async (req: Request) => {
         const emailDetails = [];
         let emailsProcessed = 0;
 
-        for (const msgRef of messageIds) {
-          const msgResponse = await fetch(
-            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgRef.id}`,
-            {
-              headers: {
-                Authorization: `Bearer ${accessToken}`,
-              },
-            }
-          );
+        console.log(`📧 Starting to process ${messageIds.length} messages from Gmail API`);
 
-          if (msgResponse.ok) {
+        for (const msgRef of messageIds) {
+          try {
+            const msgResponse = await fetch(
+              `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgRef.id}`,
+              {
+                headers: {
+                  Authorization: `Bearer ${accessToken}`,
+                },
+              }
+            );
+
+            if (!msgResponse.ok) {
+              console.error(`Failed to fetch message ${msgRef.id}: ${msgResponse.status}`);
+              continue;
+            }
+
             const message: GmailMessage = await msgResponse.json();
             const headers = message.payload.headers;
 
@@ -402,6 +415,9 @@ Deno.serve(async (req: Request) => {
             const senderName = from.replace(/<.+?>/, "").trim().replace(/"/g, "");
             const senderDomain = senderEmail.split("@")[1] || "";
 
+            console.log(`📨 Processing email ${message.id} from ${senderEmail}`);
+
+            // Check if sender is blocked
             const { data: blockedSender } = await supabase
               .from("blocked_senders")
               .select("total_emails_blocked")
@@ -412,42 +428,61 @@ Deno.serve(async (req: Request) => {
             let shouldAutoLabel = false;
             if (blockedSender && blockedSender.total_emails_blocked >= 2) {
               shouldAutoLabel = true;
+              console.log(`🚫 Sender ${senderEmail} is blocked (${blockedSender.total_emails_blocked} previous blocks)`);
             }
 
-            // Get mailbox_id for this connection
-            const { data: mailboxData } = await supabase
-              .from("mailboxes")
-              .select("id")
-              .eq("email_address", connection.email)
-              .maybeSingle();
+            // Prepare email record for insertion
+            const emailRecord = {
+              user_id: connection.user_id,
+              mailbox_id: connection.mailbox_id,
+              gmail_message_id: message.id,
+              thread_id: message.threadId,
+              subject: subject,
+              sender_email: senderEmail,
+              sender_name: senderName,
+              sender_domain: senderDomain,
+              snippet: message.snippet,
+              received_at: new Date(parseInt(message.internalDate)).toISOString(),
+              classification: shouldAutoLabel ? "blocked" : "pending",
+              make_webhook_sent_at: shouldAutoLabel ? null : new Date().toISOString(),
+              label_applied: false,
+            };
 
-            const { error: insertError } = await supabase
+            console.log(`💾 Attempting to insert email into database:`, {
+              message_id: message.id,
+              user_id: connection.user_id,
+              mailbox_id: connection.mailbox_id,
+              sender: senderEmail,
+              subject: subject?.substring(0, 50),
+            });
+
+            // Use upsert to handle duplicates gracefully
+            const { data: insertedEmail, error: insertError } = await supabase
               .from("emails")
-              .insert({
-                user_id: connection.user_id,
-                mailbox_id: mailboxData?.id || null,
-                gmail_message_id: message.id,
-                thread_id: message.threadId,
-                subject: subject,
-                sender_email: senderEmail,
-                sender_name: senderName,
-                sender_domain: senderDomain,
-                snippet: message.snippet,
-                received_at: new Date(parseInt(message.internalDate)).toISOString(),
-                classification: shouldAutoLabel ? "blocked" : "pending",
-                make_webhook_sent_at: shouldAutoLabel ? null : new Date().toISOString(),
-                label_applied: false,
+              .upsert(emailRecord, {
+                onConflict: "user_id,gmail_message_id",
+                ignoreDuplicates: false,
               })
               .select()
               .maybeSingle();
 
-            if (insertError && !insertError.message.includes("duplicate")) {
-              console.error(`Error inserting email: ${insertError.message}`);
-            } else if (!insertError) {
+            if (insertError) {
+              console.error(`❌ Database insertion failed for message ${message.id}:`, {
+                error: insertError.message,
+                code: insertError.code,
+                details: insertError.details,
+                hint: insertError.hint,
+                user_id: connection.user_id,
+                mailbox_id: connection.mailbox_id,
+              });
+              totalFailures++;
+            } else {
+              console.log(`✅ Successfully inserted/updated email ${message.id} in database`);
               emailsProcessed++;
             }
 
-            // Add to webhook payload
+            // Add to webhook payload regardless of DB success
+            // (webhook can still process and we'll update classification later)
             emailDetails.push({
               message_id: message.id,
               thread_id: message.threadId,
@@ -464,6 +499,8 @@ Deno.serve(async (req: Request) => {
             // Auto-label emails from repeat offenders
             if (shouldAutoLabel) {
               try {
+                console.log(`🏷️ Auto-labeling email ${message.id} as blocked`);
+
                 await fetch(
                   `https://gmail.googleapis.com/gmail/v1/users/me/messages/${message.id}/modify`,
                   {
@@ -490,20 +527,30 @@ Deno.serve(async (req: Request) => {
                   .update({ total_emails_blocked: blockedSender.total_emails_blocked + 1 })
                   .eq("user_id", connection.user_id)
                   .eq("email_address", senderEmail);
+
+                console.log(`✅ Auto-label applied successfully`);
               } catch (labelError) {
                 console.error(`Error applying label: ${labelError}`);
               }
             }
+          } catch (msgError) {
+            console.error(`Error processing message ${msgRef.id}:`, msgError);
+            totalFailures++;
           }
         }
 
-        console.log(`Processed ${emailsProcessed} emails`);
+        console.log(`\n📊 Email processing summary for connection ${connection.id}:`);
+        console.log(`   - Messages found in Gmail: ${messageIds.length}`);
+        console.log(`   - Successfully inserted to DB: ${emailsProcessed}`);
+        console.log(`   - Ready for webhook: ${emailDetails.length}`);
+
         totalFetched += emailsProcessed;
 
-        // Send to webhook in batches of 25
+        // Send to webhook in batches of 25 with timeout protection
         const webhookUrl = connection.make_webhook_url || DEFAULT_MAKE_WEBHOOK;
         let webhookSent = false;
         const BATCH_SIZE = 25;
+        const WEBHOOK_TIMEOUT = 10000; // 10 second timeout per batch
 
         if (emailDetails.length > 0) {
           const batches = [];
@@ -511,7 +558,7 @@ Deno.serve(async (req: Request) => {
             batches.push(emailDetails.slice(i, i + BATCH_SIZE));
           }
 
-          console.log(`Sending ${emailDetails.length} emails in ${batches.length} batch(es)`);
+          console.log(`📤 Sending ${emailDetails.length} emails to webhook in ${batches.length} batch(es)`);
 
           for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
             const batch = batches[batchIndex];
@@ -531,42 +578,45 @@ Deno.serve(async (req: Request) => {
             };
 
             try {
+              // Create an AbortController for timeout
+              const controller = new AbortController();
+              const timeoutId = setTimeout(() => controller.abort(), WEBHOOK_TIMEOUT);
+
               const webhookResponse = await fetch(webhookUrl, {
                 method: "POST",
                 headers: {
                   "Content-Type": "application/json",
                 },
                 body: JSON.stringify(webhookPayload),
+                signal: controller.signal,
               });
+
+              clearTimeout(timeoutId);
 
               if (webhookResponse.ok) {
                 webhookSent = true;
                 totalPosted += batch.length;
 
-                // Parse Make.com response
+                // Try to parse response, but don't block on it
                 try {
                   const makeResponse = await webhookResponse.json();
 
-                  // Make should return: { results: [{ message_id, classification }] }
                   if (makeResponse.results && Array.isArray(makeResponse.results)) {
                     const resultsCount = makeResponse.results.length;
                     const sentCount = batch.length;
 
                     if (resultsCount < sentCount) {
-                      console.warn(`Partial results: sent ${sentCount}, received ${resultsCount}`);
+                      console.warn(`⚠️ Partial results: sent ${sentCount}, received ${resultsCount}`);
                     }
 
-                    // Process results
+                    // Update classifications based on Make results
                     const resultMap = new Map(
                       makeResponse.results.map((r: any) => [r.message_id, r.classification])
                     );
 
-                    // Update classifications based on Make results
                     for (const email of batch) {
                       const classification = resultMap.get(email.message_id);
-
                       if (classification) {
-                        // Update email with classification from Make
                         await supabase
                           .from("emails")
                           .update({
@@ -575,26 +625,29 @@ Deno.serve(async (req: Request) => {
                           })
                           .eq("gmail_message_id", email.message_id)
                           .eq("user_id", connection.user_id);
-                      } else {
-                        console.log(`No result for message ${email.message_id}`);
                       }
                     }
 
-                    console.log(`Batch ${batchIndex + 1}/${batches.length}: Posted ${batch.length}, received ${resultsCount} results`);
+                    console.log(`✅ Batch ${batchIndex + 1}/${batches.length}: Posted ${batch.length}, received ${resultsCount} results`);
                   } else {
-                    console.warn(`Batch ${batchIndex + 1}: Make response missing results array`);
+                    console.warn(`⚠️ Batch ${batchIndex + 1}: Make response missing results array`);
                   }
                 } catch (parseError) {
-                  console.error(`Failed to parse Make response: ${parseError}`);
+                  console.error(`⚠️ Failed to parse Make response (non-critical): ${parseError}`);
                 }
               } else {
                 const errorText = await webhookResponse.text();
-                console.error(`Webhook error (batch ${batchIndex + 1}): ${errorText}`);
+                console.error(`❌ Webhook error (batch ${batchIndex + 1}): ${errorText}`);
                 totalFailures++;
               }
             } catch (webhookError) {
-              console.error(`Webhook exception (batch ${batchIndex + 1}): ${webhookError}`);
-              totalFailures++;
+              if (webhookError.name === 'AbortError') {
+                console.warn(`⏱️ Webhook timeout (batch ${batchIndex + 1}) - continuing anyway. Emails are saved in DB.`);
+                totalFailures++;
+              } else {
+                console.error(`❌ Webhook exception (batch ${batchIndex + 1}): ${webhookError}`);
+                totalFailures++;
+              }
             }
           }
         }
