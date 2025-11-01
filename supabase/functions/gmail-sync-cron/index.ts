@@ -29,6 +29,95 @@ interface TokenRefreshResult {
   requiresReconnect?: boolean;
 }
 
+interface EmailBody {
+  text: string | null;
+  html: string | null;
+}
+
+// Base64url decode helper function
+function base64urlDecode(str: string): string {
+  try {
+    // Replace URL-safe characters with standard base64 characters
+    let base64 = str.replace(/-/g, '+').replace(/_/g, '/');
+
+    // Add padding if needed
+    while (base64.length % 4) {
+      base64 += '=';
+    }
+
+    // Decode base64
+    return atob(base64);
+  } catch (error) {
+    console.error('Base64 decode error:', error);
+    return '';
+  }
+}
+
+// Extract email body from Gmail API message payload
+function extractEmailBody(payload: any): EmailBody {
+  let text: string | null = null;
+  let html: string | null = null;
+
+  // Check if body data is directly in payload
+  if (payload.body?.data) {
+    const decoded = base64urlDecode(payload.body.data);
+    // Determine if it's HTML or plain text based on content
+    if (decoded.includes('<html') || decoded.includes('<body')) {
+      html = decoded;
+    } else {
+      text = decoded;
+    }
+  }
+
+  // Check multipart message (most emails)
+  if (payload.parts && Array.isArray(payload.parts)) {
+    for (const part of payload.parts) {
+      if (part.mimeType === 'text/plain' && part.body?.data) {
+        text = base64urlDecode(part.body.data);
+      } else if (part.mimeType === 'text/html' && part.body?.data) {
+        html = base64urlDecode(part.body.data);
+      } else if (part.parts) {
+        // Nested multipart (e.g., alternative within mixed)
+        const nested = extractEmailBody(part);
+        if (nested.text) text = nested.text;
+        if (nested.html) html = nested.html;
+      }
+    }
+  }
+
+  return { text, html };
+}
+
+// Check if email has attachments
+function hasAttachments(payload: any): boolean {
+  if (payload.parts && Array.isArray(payload.parts)) {
+    for (const part of payload.parts) {
+      if (part.filename && part.filename.length > 0) {
+        return true;
+      }
+      if (part.parts && hasAttachments(part)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+// Extract important headers for domain verification
+function extractHeaders(headers: Array<{ name: string; value: string }>): any {
+  const headerMap: any = {};
+  const importantHeaders = ['from', 'to', 'reply-to', 'return-path', 'sender', 'x-sender'];
+
+  for (const header of headers) {
+    const lowerName = header.name.toLowerCase();
+    if (importantHeaders.includes(lowerName)) {
+      headerMap[lowerName] = header.value;
+    }
+  }
+
+  return headerMap;
+}
+
 async function refreshAccessToken(
   connection: any,
   supabase: any
@@ -391,8 +480,9 @@ Deno.serve(async (req: Request) => {
 
         for (const msgRef of messageIds) {
           try {
+            // Fetch full email with format=full to get body content
             const msgResponse = await fetch(
-              `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgRef.id}`,
+              `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgRef.id}?format=full`,
               {
                 headers: {
                   Authorization: `Bearer ${accessToken}`,
@@ -416,6 +506,13 @@ Deno.serve(async (req: Request) => {
             const senderDomain = senderEmail.split("@")[1] || "";
 
             console.log(`📨 Processing email ${message.id} from ${senderEmail}`);
+
+            // Extract full email body
+            const emailBody = extractEmailBody(message.payload);
+            const hasAttach = hasAttachments(message.payload);
+            const importantHeaders = extractHeaders(headers);
+
+            console.log(`   - Has text body: ${!!emailBody.text}, Has HTML body: ${!!emailBody.html}, Has attachments: ${hasAttach}`);
 
             // Check if sender is blocked
             const { data: blockedSender } = await supabase
@@ -442,6 +539,10 @@ Deno.serve(async (req: Request) => {
               sender_name: senderName,
               sender_domain: senderDomain,
               snippet: message.snippet,
+              body_text: emailBody.text,
+              body_html: emailBody.html,
+              has_attachments: hasAttach,
+              headers_json: importantHeaders,
               received_at: new Date(parseInt(message.internalDate)).toISOString(),
               classification: shouldAutoLabel ? "blocked" : "pending",
               make_webhook_sent_at: shouldAutoLabel ? null : new Date().toISOString(),
@@ -481,16 +582,20 @@ Deno.serve(async (req: Request) => {
               emailsProcessed++;
             }
 
-            // Add to webhook payload regardless of DB success
-            // (webhook can still process and we'll update classification later)
+            // Add to webhook payload with full email content for AI classification
             emailDetails.push({
               message_id: message.id,
               thread_id: message.threadId,
               from: from,
               sender_email: senderEmail,
               sender_name: senderName,
+              sender_domain: senderDomain,
               subject: subject,
               snippet: message.snippet,
+              body_text: emailBody.text,
+              body_html: emailBody.html,
+              has_attachments: hasAttach,
+              headers: importantHeaders,
               received_date: new Date(parseInt(message.internalDate)).toISOString(),
               label_ids: message.labelIds,
               current_classification: shouldAutoLabel ? "blocked" : "pending",
