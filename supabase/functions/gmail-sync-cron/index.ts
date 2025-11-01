@@ -651,36 +651,31 @@ Deno.serve(async (req: Request) => {
 
         totalFetched += emailsProcessed;
 
-        // Send to webhook in batches of 25 with timeout protection
+        // Send emails to webhook ONE AT A TIME (simplifies Make.com scenario)
         const webhookUrl = connection.make_webhook_url || DEFAULT_MAKE_WEBHOOK;
-        let webhookSent = false;
-        const BATCH_SIZE = 25;
-        const WEBHOOK_TIMEOUT = 10000; // 10 second timeout per batch
+        let webhookSuccessCount = 0;
+        const WEBHOOK_TIMEOUT = 10000; // 10 second timeout per email
+        const DELAY_BETWEEN_WEBHOOKS = 150; // 150ms delay to avoid overwhelming Make.com
 
         if (emailDetails.length > 0) {
-          const batches = [];
-          for (let i = 0; i < emailDetails.length; i += BATCH_SIZE) {
-            batches.push(emailDetails.slice(i, i + BATCH_SIZE));
-          }
+          console.log(`\n📤 Sending ${emailDetails.length} emails to Make.com webhook (one at a time)`);
 
-          console.log(`📤 Sending ${emailDetails.length} emails to webhook in ${batches.length} batch(es)`);
+          for (let i = 0; i < emailDetails.length; i++) {
+            const emailDetail = emailDetails[i];
+            const emailNumber = i + 1;
+            const totalEmails = emailDetails.length;
 
-          for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
-            const batch = batches[batchIndex];
+            // Create payload for single email (no array, simplifies Make.com)
             const webhookPayload = {
               user_id: connection.user_id,
               gmail_connection_id: connection.id,
               user_email: connection.email || "",
               access_token: accessToken,
-              emails: batch,
-              batch_number: batchIndex + 1,
-              batch_total: batches.length,
-              sync_info: {
-                is_first_sync: isFirstSync,
-                total_emails: batch.length,
-                sync_timestamp: new Date().toISOString(),
-              },
+              email: emailDetail, // Single email object, not array
             };
+
+            const subjectPreview = emailDetail.subject?.substring(0, 60) || "(no subject)";
+            console.log(`   📧 [${emailNumber}/${totalEmails}] Sending: "${subjectPreview}"`);
 
             try {
               // Create an AbortController for timeout
@@ -699,62 +694,53 @@ Deno.serve(async (req: Request) => {
               clearTimeout(timeoutId);
 
               if (webhookResponse.ok) {
-                webhookSent = true;
-                totalPosted += batch.length;
+                webhookSuccessCount++;
+                totalPosted++;
 
-                // Try to parse response, but don't block on it
+                // Try to parse response and update classification
                 try {
                   const makeResponse = await webhookResponse.json();
 
-                  if (makeResponse.results && Array.isArray(makeResponse.results)) {
-                    const resultsCount = makeResponse.results.length;
-                    const sentCount = batch.length;
+                  // Make.com returns classification for single email
+                  if (makeResponse.classification) {
+                    await supabase
+                      .from("emails")
+                      .update({
+                        classification: makeResponse.classification,
+                        make_webhook_sent_at: new Date().toISOString(),
+                      })
+                      .eq("gmail_message_id", emailDetail.message_id)
+                      .eq("user_id", connection.user_id);
 
-                    if (resultsCount < sentCount) {
-                      console.warn(`⚠️ Partial results: sent ${sentCount}, received ${resultsCount}`);
-                    }
-
-                    // Update classifications based on Make results
-                    const resultMap = new Map(
-                      makeResponse.results.map((r: any) => [r.message_id, r.classification])
-                    );
-
-                    for (const email of batch) {
-                      const classification = resultMap.get(email.message_id);
-                      if (classification) {
-                        await supabase
-                          .from("emails")
-                          .update({
-                            classification: classification,
-                            make_webhook_sent_at: new Date().toISOString(),
-                          })
-                          .eq("gmail_message_id", email.message_id)
-                          .eq("user_id", connection.user_id);
-                      }
-                    }
-
-                    console.log(`✅ Batch ${batchIndex + 1}/${batches.length}: Posted ${batch.length}, received ${resultsCount} results`);
+                    console.log(`      ✅ Make.com classified as: ${makeResponse.classification}`);
                   } else {
-                    console.warn(`⚠️ Batch ${batchIndex + 1}: Make response missing results array`);
+                    console.log(`      ✅ Webhook succeeded (status ${webhookResponse.status})`);
                   }
                 } catch (parseError) {
-                  console.error(`⚠️ Failed to parse Make response (non-critical): ${parseError}`);
+                  console.warn(`      ⚠️ Could not parse Make.com response (non-critical): ${parseError}`);
                 }
               } else {
                 const errorText = await webhookResponse.text();
-                console.error(`❌ Webhook error (batch ${batchIndex + 1}): ${errorText}`);
+                console.error(`      ❌ Webhook failed (${webhookResponse.status}): ${errorText.substring(0, 100)}`);
                 totalFailures++;
               }
             } catch (webhookError) {
               if (webhookError.name === 'AbortError') {
-                console.warn(`⏱️ Webhook timeout (batch ${batchIndex + 1}) - continuing anyway. Emails are saved in DB.`);
+                console.warn(`      ⏱️ Webhook timeout - continuing with next email. Email is saved in DB.`);
                 totalFailures++;
               } else {
-                console.error(`❌ Webhook exception (batch ${batchIndex + 1}): ${webhookError}`);
+                console.error(`      ❌ Webhook error: ${webhookError instanceof Error ? webhookError.message : String(webhookError)}`);
                 totalFailures++;
               }
             }
+
+            // Add small delay between webhook calls to avoid overwhelming Make.com
+            if (i < emailDetails.length - 1) {
+              await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_WEBHOOKS));
+            }
           }
+
+          console.log(`\n📊 Webhook summary: ${webhookSuccessCount}/${emailDetails.length} emails sent successfully`);
         }
 
         console.log(`Sync completed for ${connection.email}`);
@@ -768,7 +754,8 @@ Deno.serve(async (req: Request) => {
           user_id: connection.user_id,
           connection_id: connection.id,
           new_emails: messageIds.length,
-          webhook_sent: webhookSent,
+          webhook_sent: webhookSuccessCount > 0,
+          webhook_success_count: webhookSuccessCount,
           is_first_sync: isFirstSync,
           token_refreshed: tokenResult.refreshed,
         });
