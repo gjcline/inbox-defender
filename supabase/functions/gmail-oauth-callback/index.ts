@@ -403,16 +403,53 @@ Deno.serve(async (req: Request) => {
       console.log(`[${reqId}] synthetic_probe_active`, { forceError, mutation: "fake_code" });
     }
 
-    // Detailed logging before token exchange
-    console.log(`[${reqId}] 🔐 Token exchange request details:`);
-    console.log(`   📍 URL: https://oauth2.googleapis.com/token`);
-    console.log(`   🔑 Client ID (first 30 chars): ${actualClientId.substring(0, 30)}...`);
-    console.log(`   🔄 Redirect URI: ${actualRedirectUri}`);
-    console.log(`   📝 Authorization Code (first 15 chars): ${actualCode.substring(0, 15)}...`);
-    console.log(`   📝 Authorization Code (last 10 chars): ...${actualCode.substring(actualCode.length - 10)}`);
-    console.log(`   📏 Code length: ${actualCode.length} characters`);
-    console.log(`   🔐 Grant type: authorization_code`);
-    console.log(`   🔒 Client secret: [REDACTED]`);
+    // ═══════════════════════════════════════════════════════════
+    // COMPREHENSIVE TOKEN EXCHANGE LOGGING
+    // ═══════════════════════════════════════════════════════════
+    console.log(`[${reqId}] ═══════════════════════════════════════════════════════════`);
+    console.log(`[${reqId}] 🔐 DETAILED TOKEN EXCHANGE REQUEST`);
+    console.log(`[${reqId}] ═══════════════════════════════════════════════════════════`);
+    console.log(`[${reqId}] `);
+    console.log(`[${reqId}] 📍 Request URL:`);
+    console.log(`[${reqId}]    https://oauth2.googleapis.com/token`);
+    console.log(`[${reqId}] `);
+    console.log(`[${reqId}] 📋 Request Method:`);
+    console.log(`[${reqId}]    POST`);
+    console.log(`[${reqId}] `);
+    console.log(`[${reqId}] 📋 Request Headers:`);
+    console.log(`[${reqId}]    Content-Type: application/x-www-form-urlencoded`);
+    console.log(`[${reqId}] `);
+    console.log(`[${reqId}] 📦 Request Body Parameters:`);
+    console.log(`[${reqId}]    grant_type: authorization_code`);
+    console.log(`[${reqId}]    client_id: ${actualClientId}`);
+    console.log(`[${reqId}]    client_secret: [REDACTED - Length: ${googleClientSecret.length}]`);
+    console.log(`[${reqId}]    redirect_uri: ${actualRedirectUri}`);
+    console.log(`[${reqId}]    code: (see details below)`);
+    console.log(`[${reqId}] `);
+    console.log(`[${reqId}] 🔍 Authorization Code Analysis:`);
+    console.log(`[${reqId}]    Full length: ${actualCode.length} characters`);
+    console.log(`[${reqId}]    Expected length: ~70-120 characters`);
+    console.log(`[${reqId}]    First 20 chars: ${actualCode.substring(0, 20)}...`);
+    console.log(`[${reqId}]    Last 20 chars: ...${actualCode.substring(actualCode.length - 20)}`);
+    console.log(`[${reqId}]    Contains spaces: ${actualCode.includes(' ') ? '❌ YES (INVALID!)' : '✅ NO'}`);
+    console.log(`[${reqId}]    Contains newlines: ${(actualCode.includes('\n') || actualCode.includes('\r')) ? '❌ YES (INVALID!)' : '✅ NO'}`);
+    console.log(`[${reqId}]    Contains tabs: ${actualCode.includes('\t') ? '❌ YES (INVALID!)' : '✅ NO'}`);
+    console.log(`[${reqId}]    Trimmed matches original: ${actualCode.trim() === actualCode ? '✅ YES' : '❌ NO (has whitespace!)'}`);
+
+    // Check for common code issues
+    const codeIssues = [];
+    if (actualCode.length < 50) codeIssues.push('Code too short');
+    if (actualCode.length > 200) codeIssues.push('Code too long');
+    if (actualCode.includes(' ')) codeIssues.push('Contains spaces');
+    if (actualCode.includes('\n') || actualCode.includes('\r')) codeIssues.push('Contains newlines');
+    if (actualCode.trim() !== actualCode) codeIssues.push('Has leading/trailing whitespace');
+
+    if (codeIssues.length > 0) {
+      console.log(`[${reqId}]    ⚠️  ISSUES DETECTED: ${codeIssues.join(', ')}`);
+    } else {
+      console.log(`[${reqId}]    ✅ Code appears valid (no obvious issues)`);
+    }
+    console.log(`[${reqId}] ═══════════════════════════════════════════════════════════`);
 
     const tokenParams = {
       code: actualCode,
@@ -422,6 +459,8 @@ Deno.serve(async (req: Request) => {
       grant_type: "authorization_code",
     };
 
+    console.log(`[${reqId}] 🚀 Sending token exchange request to Google...`);
+
     const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
       headers: {
@@ -430,31 +469,79 @@ Deno.serve(async (req: Request) => {
       body: new URLSearchParams(tokenParams),
     });
 
-    console.log(`[${reqId}] 📥 Token exchange response status: ${tokenResponse.status} ${tokenResponse.statusText}`);
+    console.log(`[${reqId}] ═══════════════════════════════════════════════════════════`);
+    console.log(`[${reqId}] 📥 GOOGLE TOKEN EXCHANGE RESPONSE`);
+    console.log(`[${reqId}] ═══════════════════════════════════════════════════════════`);
+    console.log(`[${reqId}] `);
+    console.log(`[${reqId}] 📊 Response Status:`);
+    console.log(`[${reqId}]    Status Code: ${tokenResponse.status}`);
+    console.log(`[${reqId}]    Status Text: ${tokenResponse.statusText}`);
+    console.log(`[${reqId}]    Success: ${tokenResponse.ok ? '✅ YES' : '❌ NO'}`);
+    console.log(`[${reqId}] `);
+    console.log(`[${reqId}] 📋 Response Headers:`);
+    tokenResponse.headers.forEach((value, key) => {
+      console.log(`[${reqId}]    ${key}: ${value}`);
+    });
+    console.log(`[${reqId}] `);
 
     if (!tokenResponse.ok) {
       const errTxt = await tokenResponse.text();
 
+      console.log(`[${reqId}] 📄 Response Body (Raw Text):`);
+      console.log(`[${reqId}]    ${errTxt.substring(0, 500)}${errTxt.length > 500 ? '...' : ''}`);
+      console.log(`[${reqId}] `);
+
       // Parse error if JSON
       let errorDetail = errTxt;
+      let errorJson: any = null;
+
       try {
-        const errorJson = JSON.parse(errTxt);
-        console.error(`[${reqId}] ❌ FULL Google OAuth error response:`, JSON.stringify(errorJson, null, 2));
+        errorJson = JSON.parse(errTxt);
+        console.log(`[${reqId}] 📋 Parsed Error Response (JSON):`);
+        console.log(`[${reqId}] ${JSON.stringify(errorJson, null, 2).split('\n').map(line => `[${reqId}]    ${line}`).join('\n')}`);
+        console.log(`[${reqId}] `);
         errorDetail = JSON.stringify(errorJson, null, 2);
 
-        // Log specific error fields
+        // Log specific error fields with emphasis
+        console.log(`[${reqId}] ❌❌❌ ERROR DETAILS ❌❌❌`);
         if (errorJson.error) {
-          console.error(`[${reqId}]   Error: ${errorJson.error}`);
+          console.error(`[${reqId}]    Error Type: ${errorJson.error}`);
         }
         if (errorJson.error_description) {
-          console.error(`[${reqId}]   Description: ${errorJson.error_description}`);
+          console.error(`[${reqId}]    Description: ${errorJson.error_description}`);
         }
         if (errorJson.error_uri) {
-          console.error(`[${reqId}]   URI: ${errorJson.error_uri}`);
+          console.error(`[${reqId}]    Documentation: ${errorJson.error_uri}`);
         }
-      } catch {
-        console.error(`[${reqId}] ❌ Google OAuth error (raw text):`, errTxt);
+
+        // Add contextual hints based on error type
+        if (errorJson.error === 'invalid_grant') {
+          console.error(`[${reqId}] `);
+          console.error(`[${reqId}]    💡 COMMON CAUSES OF invalid_grant:`);
+          console.error(`[${reqId}]       1. Authorization code already used (codes are single-use)`);
+          console.error(`[${reqId}]       2. Authorization code expired (valid for ~10 minutes)`);
+          console.error(`[${reqId}]       3. Client ID mismatch between auth URL and token exchange`);
+          console.error(`[${reqId}]       4. Redirect URI mismatch between auth URL and token exchange`);
+          console.error(`[${reqId}]       5. User not authorized in OAuth consent screen (Testing mode)`);
+          console.error(`[${reqId}]       6. Code contains whitespace or special characters`);
+        } else if (errorJson.error === 'invalid_client') {
+          console.error(`[${reqId}] `);
+          console.error(`[${reqId}]    💡 INVALID_CLIENT means:`);
+          console.error(`[${reqId}]       - Client ID and/or Client Secret are incorrect`);
+          console.error(`[${reqId}]       - Check GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in Supabase secrets`);
+        } else if (errorJson.error === 'redirect_uri_mismatch') {
+          console.error(`[${reqId}] `);
+          console.error(`[${reqId}]    💡 REDIRECT_URI_MISMATCH means:`);
+          console.error(`[${reqId}]       - The redirect_uri used here doesn't match what was used in auth URL`);
+          console.error(`[${reqId}]       - Or it's not registered in Google Cloud Console`);
+        }
+      } catch (parseError) {
+        console.error(`[${reqId}] ⚠️  Failed to parse error response as JSON`);
+        console.error(`[${reqId}]    Raw error text: ${errTxt}`);
+        console.error(`[${reqId}]    Parse error: ${parseError instanceof Error ? parseError.message : String(parseError)}`);
       }
+
+      console.log(`[${reqId}] ═══════════════════════════════════════════════════════════`);
 
       console.error(`[${reqId}] token_exchange_failed`, {
         status: tokenResponse.status,
@@ -468,6 +555,8 @@ Deno.serve(async (req: Request) => {
           reason: "token_exchange_failed",
           hint: "Google rejected the authorization code",
           detail: errorDetail.slice(0, 1000),
+          error_type: errorJson?.error || 'unknown',
+          error_description: errorJson?.error_description || 'No description provided',
           status: tokenResponse.status,
           statusText: tokenResponse.statusText,
           using_redirect_uri: REDIRECT_URI,
@@ -479,6 +568,10 @@ Deno.serve(async (req: Request) => {
         }
       );
     }
+
+    // Success case
+    console.log(`[${reqId}] 📄 Response Body:`);
+    console.log(`[${reqId}]    ✅ Token exchange successful!`);
 
     const tokens = await tokenResponse.json();
     const { access_token, refresh_token, expires_in } = tokens;
