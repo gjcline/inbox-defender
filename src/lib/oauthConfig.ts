@@ -1,4 +1,4 @@
-export const OAUTH_SCOPES = 'https://www.googleapis.com/auth/gmail.modify openid email profile';
+export const OAUTH_SCOPES = 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.labels https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile openid';
 
 const getGoogleRedirectUri = (): string => {
   const redirectUri = import.meta.env.VITE_GOOGLE_REDIRECT_URI;
