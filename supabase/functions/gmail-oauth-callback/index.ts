@@ -84,9 +84,9 @@ Deno.serve(async (req: Request) => {
     console.log(`[${reqId}]    ${googleClientSecret ? '✓ Set (length: ' + googleClientSecret.length + ')' : '❌ NOT SET'}`);
     console.log(`[${reqId}] `);
     console.log(`[${reqId}] ⚠️  CRITICAL: These MUST match frontend values exactly!`);
-    const expectedClientId = '522566281733-ehke7sqmhla6suk6susnk5p7ok0d9kav.apps.googleusercontent.com';
+    const expectedClientId = '522566281733-iq8km9uqgrpsv8bht7sf7qn240ss1qa3.apps.googleusercontent.com';
     const expectedRedirectUri = 'https://app.bliztic.com/api/auth/google/callback';
-    console.log(`[${reqId}]    Expected Client ID from frontend: ${expectedClientId}`);
+    console.log(`[${reqId}]    Expected Client ID from frontend (NEW CREDENTIALS): ${expectedClientId}`);
     console.log(`[${reqId}]    Expected Redirect URI from frontend: ${expectedRedirectUri}`);
     console.log(`[${reqId}] `);
     console.log(`[${reqId}] 🔍 Configuration Match Check:`);
@@ -660,6 +660,85 @@ Deno.serve(async (req: Request) => {
       console.log(`[${reqId}] ✓ New mailbox created:`, mailboxId);
     }
 
+    // Step 3.5: Create Gmail labels for InboxDefender
+    console.log(`[${reqId}] Step 3.5: Creating InboxDefender labels in Gmail...`);
+    const labelMapping: Record<string, string> = {};
+    const labelsToCreate = [
+      { key: 'inbox', name: 'InboxDefender/Inbox' },
+      { key: 'personal', name: 'InboxDefender/Personal' },
+      { key: 'conversations', name: 'InboxDefender/Conversations' },
+      { key: 'marketing', name: 'InboxDefender/Marketing' },
+      { key: 'cold_outreach', name: 'InboxDefender/Cold_Outreach' },
+      { key: 'spam', name: 'InboxDefender/Spam' },
+    ];
+
+    try {
+      // First, fetch existing labels to avoid duplicates
+      const listLabelsResponse = await fetch(
+        'https://gmail.googleapis.com/gmail/v1/users/me/labels',
+        {
+          headers: {
+            Authorization: `Bearer ${access_token}`,
+          },
+        }
+      );
+
+      if (listLabelsResponse.ok) {
+        const existingLabels = await listLabelsResponse.json();
+        const labelMap = new Map(
+          (existingLabels.labels || []).map((label: any) => [label.name, label.id])
+        );
+
+        console.log(`[${reqId}] Found ${labelMap.size} existing Gmail labels`);
+
+        // Create labels that don't exist
+        for (const labelDef of labelsToCreate) {
+          if (labelMap.has(labelDef.name)) {
+            const labelId = labelMap.get(labelDef.name);
+            labelMapping[labelDef.key] = labelId;
+            console.log(`[${reqId}] ✓ Label already exists: ${labelDef.name} (${labelId})`);
+          } else {
+            // Create the label
+            try {
+              const createResponse = await fetch(
+                'https://gmail.googleapis.com/gmail/v1/users/me/labels',
+                {
+                  method: 'POST',
+                  headers: {
+                    Authorization: `Bearer ${access_token}`,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({
+                    name: labelDef.name,
+                    labelListVisibility: 'labelShow',
+                    messageListVisibility: 'show',
+                  }),
+                }
+              );
+
+              if (createResponse.ok) {
+                const newLabel = await createResponse.json();
+                labelMapping[labelDef.key] = newLabel.id;
+                console.log(`[${reqId}] ✓ Created label: ${labelDef.name} (${newLabel.id})`);
+              } else {
+                const errorText = await createResponse.text();
+                console.error(`[${reqId}] ⚠️  Failed to create label ${labelDef.name}:`, errorText);
+              }
+            } catch (createError) {
+              console.error(`[${reqId}] ⚠️  Exception creating label ${labelDef.name}:`, createError);
+            }
+          }
+        }
+
+        console.log(`[${reqId}] ✓ Label mapping created:`, labelMapping);
+      } else {
+        console.error(`[${reqId}] ⚠️  Failed to list existing labels, skipping label creation`);
+      }
+    } catch (labelError) {
+      console.error(`[${reqId}] ⚠️  Label creation error (non-fatal):`, labelError);
+      // Don't fail OAuth if label creation fails
+    }
+
     console.log(`[${reqId}] Step 4: Saving Gmail connection...`);
     const expiresAt = new Date(Date.now() + expires_in * 1000).toISOString();
 
@@ -672,6 +751,7 @@ Deno.serve(async (req: Request) => {
         refresh_token,
         token_expires_at: expiresAt,
         is_active: true,
+        label_mapping: Object.keys(labelMapping).length > 0 ? labelMapping : null,
         updated_at: new Date().toISOString(),
       }, {
         onConflict: "user_id,mailbox_id",
