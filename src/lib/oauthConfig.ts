@@ -30,10 +30,26 @@ export function buildAuthUrl(userId: string): string {
     throw new Error('VITE_GOOGLE_CLIENT_ID is not configured');
   }
 
-  console.log('🔐 Building OAuth URL for user:', userId);
-  console.log('📋 EXACT scopes being requested:', OAUTH_SCOPES);
-  console.log('🔑 Client ID (first 20 chars):', clientId.substring(0, 20) + '...');
-  console.log('🔄 Redirect URI:', GOOGLE_REDIRECT_URI);
+  console.log('═══════════════════════════════════════════════════════════');
+  console.log('🔐 FRONTEND OAuth Configuration Check');
+  console.log('═══════════════════════════════════════════════════════════');
+  console.log('👤 Building OAuth URL for user:', userId);
+  console.log('');
+  console.log('📋 Client ID Configuration:');
+  console.log('   Full Client ID:', clientId);
+  console.log('   First 30 chars:', clientId.substring(0, 30) + '...');
+  console.log('   Last 20 chars:', '...' + clientId.substring(clientId.length - 20));
+  console.log('');
+  console.log('🔄 Redirect URI Configuration:');
+  console.log('   Full Redirect URI:', GOOGLE_REDIRECT_URI);
+  console.log('');
+  console.log('📋 OAuth Scopes:');
+  console.log('   ', OAUTH_SCOPES);
+  console.log('');
+  console.log('⚠️  IMPORTANT: Backend must use IDENTICAL values!');
+  console.log('   Backend env var GOOGLE_CLIENT_ID must equal:', clientId);
+  console.log('   Backend env var GOOGLE_REDIRECT_URI must equal:', GOOGLE_REDIRECT_URI);
+  console.log('═══════════════════════════════════════════════════════════');
 
   // Encode JSON state with userId and clientId suffix for sanity checking
   const clientIdSuffix = clientId.split('-')[0].slice(-8);

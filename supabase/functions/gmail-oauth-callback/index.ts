@@ -63,6 +63,45 @@ Deno.serve(async (req: Request) => {
     const googleClientId = Deno.env.get("GOOGLE_CLIENT_ID")!;
     const googleClientSecret = Deno.env.get("GOOGLE_CLIENT_SECRET")!;
 
+    console.log(`[${reqId}] ═══════════════════════════════════════════════════════════`);
+    console.log(`[${reqId}] 🔐 BACKEND OAuth Configuration Check`);
+    console.log(`[${reqId}] ═══════════════════════════════════════════════════════════`);
+    console.log(`[${reqId}] `);
+    console.log(`[${reqId}] 📋 Client ID Configuration:`);
+    if (googleClientId) {
+      console.log(`[${reqId}]    Full Client ID: ${googleClientId}`);
+      console.log(`[${reqId}]    First 30 chars: ${googleClientId.substring(0, 30)}...`);
+      console.log(`[${reqId}]    Last 20 chars: ...${googleClientId.substring(googleClientId.length - 20)}`);
+    } else {
+      console.log(`[${reqId}]    ❌ GOOGLE_CLIENT_ID is NOT SET in Supabase secrets!`);
+    }
+    console.log(`[${reqId}] `);
+    console.log(`[${reqId}] 🔄 Redirect URI Configuration:`);
+    console.log(`[${reqId}]    Full Redirect URI: ${REDIRECT_URI}`);
+    console.log(`[${reqId}]    Source: ${Deno.env.get("GOOGLE_REDIRECT_URI") ? 'GOOGLE_REDIRECT_URI env var' : 'DEFAULT FALLBACK'}`);
+    console.log(`[${reqId}] `);
+    console.log(`[${reqId}] 🔐 Client Secret:`);
+    console.log(`[${reqId}]    ${googleClientSecret ? '✓ Set (length: ' + googleClientSecret.length + ')' : '❌ NOT SET'}`);
+    console.log(`[${reqId}] `);
+    console.log(`[${reqId}] ⚠️  CRITICAL: These MUST match frontend values exactly!`);
+    const expectedClientId = '522566281733-ehke7sqmhla6suk6susnk5p7ok0d9kav.apps.googleusercontent.com';
+    const expectedRedirectUri = 'https://app.bliztic.com/api/auth/google/callback';
+    console.log(`[${reqId}]    Expected Client ID from frontend: ${expectedClientId}`);
+    console.log(`[${reqId}]    Expected Redirect URI from frontend: ${expectedRedirectUri}`);
+    console.log(`[${reqId}] `);
+    console.log(`[${reqId}] 🔍 Configuration Match Check:`);
+    const clientIdMatches = googleClientId === expectedClientId;
+    const redirectUriMatches = REDIRECT_URI === expectedRedirectUri;
+    console.log(`[${reqId}]    Client ID Match: ${clientIdMatches ? '✅ YES' : '❌ NO - MISMATCH!'}`);
+    console.log(`[${reqId}]    Redirect URI Match: ${redirectUriMatches ? '✅ YES' : '❌ NO - MISMATCH!'}`);
+    if (!clientIdMatches || !redirectUriMatches) {
+      console.log(`[${reqId}] `);
+      console.log(`[${reqId}] ❌❌❌ CONFIGURATION MISMATCH DETECTED ❌❌❌`);
+      console.log(`[${reqId}]    OAuth will fail with "invalid_grant" or "redirect_uri_mismatch"`);
+      console.log(`[${reqId}]    Action: Update Supabase secrets to match frontend .env values`);
+    }
+    console.log(`[${reqId}] ═══════════════════════════════════════════════════════════`);
+
     if (!googleClientId || !googleClientSecret) {
       throw new Error("Google OAuth credentials not configured");
     }
