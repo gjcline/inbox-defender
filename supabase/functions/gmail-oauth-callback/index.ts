@@ -660,16 +660,40 @@ Deno.serve(async (req: Request) => {
       console.log(`[${reqId}] ✓ New mailbox created:`, mailboxId);
     }
 
-    // Step 3.5: Create Gmail labels for InboxDefender
+    // Step 3.5: Create Gmail labels for InboxDefender with colors
     console.log(`[${reqId}] Step 3.5: Creating InboxDefender labels in Gmail...`);
     const labelMapping: Record<string, string> = {};
     const labelsToCreate = [
-      { key: 'inbox', name: 'InboxDefender/Inbox' },
-      { key: 'personal', name: 'InboxDefender/Personal' },
-      { key: 'conversations', name: 'InboxDefender/Conversations' },
-      { key: 'marketing', name: 'InboxDefender/Marketing' },
-      { key: 'cold_outreach', name: 'InboxDefender/Cold_Outreach' },
-      { key: 'spam', name: 'InboxDefender/Spam' },
+      {
+        key: 'inbox',
+        name: 'InboxDefender/Inbox',
+        color: { backgroundColor: '#4285f4', textColor: '#ffffff' }
+      },
+      {
+        key: 'personal',
+        name: 'InboxDefender/Personal',
+        color: { backgroundColor: '#0b8043', textColor: '#ffffff' }
+      },
+      {
+        key: 'conversations',
+        name: 'InboxDefender/Conversations',
+        color: { backgroundColor: '#9c27b0', textColor: '#ffffff' }
+      },
+      {
+        key: 'marketing',
+        name: 'InboxDefender/Marketing',
+        color: { backgroundColor: '#ff6f00', textColor: '#ffffff' }
+      },
+      {
+        key: 'cold_outreach',
+        name: 'InboxDefender/Cold_Outreach',
+        color: { backgroundColor: '#d50000', textColor: '#ffffff' }
+      },
+      {
+        key: 'spam',
+        name: 'InboxDefender/Spam',
+        color: { backgroundColor: '#616161', textColor: '#ffffff' }
+      },
     ];
 
     try {
@@ -691,14 +715,40 @@ Deno.serve(async (req: Request) => {
 
         console.log(`[${reqId}] Found ${labelMap.size} existing Gmail labels`);
 
-        // Create labels that don't exist
+        // Create or update labels
         for (const labelDef of labelsToCreate) {
           if (labelMap.has(labelDef.name)) {
             const labelId = labelMap.get(labelDef.name);
             labelMapping[labelDef.key] = labelId;
-            console.log(`[${reqId}] ✓ Label already exists: ${labelDef.name} (${labelId})`);
+            console.log(`[${reqId}] ✓ Label exists: ${labelDef.name} (${labelId}), updating color...`);
+
+            // Update existing label to add color
+            try {
+              const updateResponse = await fetch(
+                `https://gmail.googleapis.com/gmail/v1/users/me/labels/${labelId}`,
+                {
+                  method: 'PATCH',
+                  headers: {
+                    Authorization: `Bearer ${access_token}`,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({
+                    color: labelDef.color,
+                  }),
+                }
+              );
+
+              if (updateResponse.ok) {
+                console.log(`[${reqId}] ✓ Updated color for: ${labelDef.name}`);
+              } else {
+                const errorText = await updateResponse.text();
+                console.error(`[${reqId}] ⚠️  Failed to update label color ${labelDef.name}:`, errorText);
+              }
+            } catch (updateError) {
+              console.error(`[${reqId}] ⚠️  Exception updating label ${labelDef.name}:`, updateError);
+            }
           } else {
-            // Create the label
+            // Create the label with color
             try {
               const createResponse = await fetch(
                 'https://gmail.googleapis.com/gmail/v1/users/me/labels',
@@ -710,6 +760,7 @@ Deno.serve(async (req: Request) => {
                   },
                   body: JSON.stringify({
                     name: labelDef.name,
+                    color: labelDef.color,
                     labelListVisibility: 'labelShow',
                     messageListVisibility: 'show',
                   }),
@@ -719,7 +770,7 @@ Deno.serve(async (req: Request) => {
               if (createResponse.ok) {
                 const newLabel = await createResponse.json();
                 labelMapping[labelDef.key] = newLabel.id;
-                console.log(`[${reqId}] ✓ Created label: ${labelDef.name} (${newLabel.id})`);
+                console.log(`[${reqId}] ✓ Created label with color: ${labelDef.name} (${newLabel.id})`);
               } else {
                 const errorText = await createResponse.text();
                 console.error(`[${reqId}] ⚠️  Failed to create label ${labelDef.name}:`, errorText);
