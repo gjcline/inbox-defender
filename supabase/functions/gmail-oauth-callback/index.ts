@@ -150,6 +150,14 @@ Deno.serve(async (req: Request) => {
 
         // Perform real token exchange with Google
         try {
+          console.log(`[${reqId}] 🔍 PROBE MODE - Token exchange request:`);
+          console.log(`   📍 URL: https://oauth2.googleapis.com/token`);
+          console.log(`   🔑 Client ID (first 30 chars): ${googleClientId.substring(0, 30)}...`);
+          console.log(`   🔄 Redirect URI: ${REDIRECT_URI}`);
+          console.log(`   📝 Auth Code (first 15 chars): ${probeCode.substring(0, 15)}...`);
+          console.log(`   📝 Auth Code (last 10 chars): ...${probeCode.substring(probeCode.length - 10)}`);
+          console.log(`   📏 Code length: ${probeCode.length} characters`);
+
           const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
             method: "POST",
             headers: {
@@ -166,18 +174,28 @@ Deno.serve(async (req: Request) => {
 
           const responseText = await tokenResponse.text();
 
-          console.log(`[${reqId}] probe_token_exchange`, {
-            status: tokenResponse.status,
-            ok: tokenResponse.ok,
-          });
+          console.log(`[${reqId}] 📥 PROBE - Token exchange response: ${tokenResponse.status} ${tokenResponse.statusText}`);
 
           if (!tokenResponse.ok) {
+            // Try to parse as JSON for better error details
+            let errorDetail = responseText;
+            try {
+              const errorJson = JSON.parse(responseText);
+              console.error(`[${reqId}] ❌ PROBE - Full error response:`, JSON.stringify(errorJson, null, 2));
+              if (errorJson.error) console.error(`[${reqId}]   Error: ${errorJson.error}`);
+              if (errorJson.error_description) console.error(`[${reqId}]   Description: ${errorJson.error_description}`);
+              errorDetail = JSON.stringify(errorJson, null, 2);
+            } catch {
+              console.error(`[${reqId}] ❌ PROBE - Error (raw):`, responseText);
+            }
+
             return new Response(
               JSON.stringify({
                 ok: false,
                 reason: "token_exchange_failed",
                 status: tokenResponse.status,
-                detail_raw: responseText.slice(0, 800),
+                statusText: tokenResponse.statusText,
+                detail_raw: errorDetail.slice(0, 1000),
                 using_redirect_uri: REDIRECT_URI,
                 req_id: reqId,
               }),
@@ -228,6 +246,10 @@ Deno.serve(async (req: Request) => {
 
       code = body.code || "";
       stateParam = body.state || "";
+
+      console.log(`[${reqId}] 🔍 Received auth code from Google:`, code.substring(0, 10) + '...' + code.substring(code.length - 5));
+      console.log(`[${reqId}] 🔍 Auth code length:`, code.length);
+      console.log(`[${reqId}] 🔍 State parameter (first 30 chars):`, stateParam.substring(0, 30) + '...');
 
       console.log(`[${reqId}] oauth_cb_params_validated`, {
         hasCode: !!code,
@@ -342,24 +364,62 @@ Deno.serve(async (req: Request) => {
       console.log(`[${reqId}] synthetic_probe_active`, { forceError, mutation: "fake_code" });
     }
 
+    // Detailed logging before token exchange
+    console.log(`[${reqId}] 🔐 Token exchange request details:`);
+    console.log(`   📍 URL: https://oauth2.googleapis.com/token`);
+    console.log(`   🔑 Client ID (first 30 chars): ${actualClientId.substring(0, 30)}...`);
+    console.log(`   🔄 Redirect URI: ${actualRedirectUri}`);
+    console.log(`   📝 Authorization Code (first 15 chars): ${actualCode.substring(0, 15)}...`);
+    console.log(`   📝 Authorization Code (last 10 chars): ...${actualCode.substring(actualCode.length - 10)}`);
+    console.log(`   📏 Code length: ${actualCode.length} characters`);
+    console.log(`   🔐 Grant type: authorization_code`);
+    console.log(`   🔒 Client secret: [REDACTED]`);
+
+    const tokenParams = {
+      code: actualCode,
+      client_id: actualClientId,
+      client_secret: googleClientSecret,
+      redirect_uri: actualRedirectUri,
+      grant_type: "authorization_code",
+    };
+
     const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
       },
-      body: new URLSearchParams({
-        code: actualCode,
-        client_id: actualClientId,
-        client_secret: googleClientSecret,
-        redirect_uri: actualRedirectUri,
-        grant_type: "authorization_code",
-      }),
+      body: new URLSearchParams(tokenParams),
     });
+
+    console.log(`[${reqId}] 📥 Token exchange response status: ${tokenResponse.status} ${tokenResponse.statusText}`);
 
     if (!tokenResponse.ok) {
       const errTxt = await tokenResponse.text();
+
+      // Parse error if JSON
+      let errorDetail = errTxt;
+      try {
+        const errorJson = JSON.parse(errTxt);
+        console.error(`[${reqId}] ❌ FULL Google OAuth error response:`, JSON.stringify(errorJson, null, 2));
+        errorDetail = JSON.stringify(errorJson, null, 2);
+
+        // Log specific error fields
+        if (errorJson.error) {
+          console.error(`[${reqId}]   Error: ${errorJson.error}`);
+        }
+        if (errorJson.error_description) {
+          console.error(`[${reqId}]   Description: ${errorJson.error_description}`);
+        }
+        if (errorJson.error_uri) {
+          console.error(`[${reqId}]   URI: ${errorJson.error_uri}`);
+        }
+      } catch {
+        console.error(`[${reqId}] ❌ Google OAuth error (raw text):`, errTxt);
+      }
+
       console.error(`[${reqId}] token_exchange_failed`, {
         status: tokenResponse.status,
+        statusText: tokenResponse.statusText,
         body: errTxt.slice(0, 400),
       });
 
@@ -368,7 +428,9 @@ Deno.serve(async (req: Request) => {
           ok: false,
           reason: "token_exchange_failed",
           hint: "Google rejected the authorization code",
-          detail: errTxt.slice(0, 500),
+          detail: errorDetail.slice(0, 1000),
+          status: tokenResponse.status,
+          statusText: tokenResponse.statusText,
           using_redirect_uri: REDIRECT_URI,
           req_id: reqId,
         }),

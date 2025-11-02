@@ -30,6 +30,11 @@ export function buildAuthUrl(userId: string): string {
     throw new Error('VITE_GOOGLE_CLIENT_ID is not configured');
   }
 
+  console.log('🔐 Building OAuth URL for user:', userId);
+  console.log('📋 EXACT scopes being requested:', OAUTH_SCOPES);
+  console.log('🔑 Client ID (first 20 chars):', clientId.substring(0, 20) + '...');
+  console.log('🔄 Redirect URI:', GOOGLE_REDIRECT_URI);
+
   // Encode JSON state with userId and clientId suffix for sanity checking
   const clientIdSuffix = clientId.split('-')[0].slice(-8);
   const stateData = {
@@ -37,6 +42,8 @@ export function buildAuthUrl(userId: string): string {
     clientId: clientIdSuffix,
   };
   const state = base64urlEncode(JSON.stringify(stateData));
+
+  console.log('📦 State parameter (decoded):', JSON.stringify(stateData));
 
   const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
   authUrl.searchParams.append('client_id', clientId);
@@ -48,5 +55,17 @@ export function buildAuthUrl(userId: string): string {
   authUrl.searchParams.append('include_granted_scopes', 'true');
   authUrl.searchParams.append('state', state);
 
-  return authUrl.toString();
+  const fullUrl = authUrl.toString();
+  console.log('🌐 Complete OAuth URL params:');
+  authUrl.searchParams.forEach((value, key) => {
+    if (key === 'client_id') {
+      console.log(`   ${key}: ${value.substring(0, 20)}...`);
+    } else if (key === 'state') {
+      console.log(`   ${key}: ${value.substring(0, 30)}...`);
+    } else {
+      console.log(`   ${key}: ${value}`);
+    }
+  });
+
+  return fullUrl;
 }
