@@ -87,7 +87,16 @@ async function moveEmailToFolder(
 
     // Prepare label modifications
     const addLabelIds = [labelId];
-    const removeLabelIds = ["INBOX"];
+    const removeLabelIds: string[] = [];
+
+    // Personal emails: Add label but KEEP in INBOX
+    if (classification === "personal") {
+      // Don't remove INBOX - personal emails stay visible
+      console.log(`📌 Keeping personal email in INBOX while adding label`);
+    } else {
+      // All other classifications: Remove from INBOX
+      removeLabelIds.push("INBOX");
+    }
 
     // Mark as read for spam and marketing
     if (classification === "spam" || classification === "marketing") {
@@ -115,7 +124,11 @@ async function moveEmailToFolder(
       return { success: false, error: errorText };
     }
 
-    console.log(`✅ Moved email ${messageId} to ${classification} folder`);
+    if (classification === "personal") {
+      console.log(`✅ Added ${classification} label to ${messageId} (kept in INBOX)`);
+    } else {
+      console.log(`✅ Moved email ${messageId} to ${classification} folder (removed from INBOX)`);
+    }
     return { success: true };
   } catch (error) {
     console.error(`Exception moving email ${messageId}:`, error);
