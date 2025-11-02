@@ -557,9 +557,73 @@ export function OAuthDiagnostics() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   OAuth Scopes
                 </label>
-                <code className="block px-3 py-2 bg-gray-50 border border-gray-200 rounded text-sm text-gray-600 font-mono">
+                <code className="block px-3 py-2 bg-gray-50 border border-gray-200 rounded text-sm text-gray-600 font-mono whitespace-pre-wrap break-all">
                   {OAUTH_SCOPES}
                 </code>
+                <div className="mt-3 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <p className="text-sm font-medium text-blue-900 mb-2">Required Scopes:</p>
+                  <ul className="text-xs text-blue-800 space-y-1">
+                    <li>✓ gmail.readonly - Read email messages</li>
+                    <li>✓ gmail.modify - Modify/label emails</li>
+                    <li>✓ gmail.labels - Create/manage labels</li>
+                    <li>✓ userinfo.email - Access user email</li>
+                    <li>✓ userinfo.profile - Access user profile</li>
+                    <li>✓ openid - OpenID Connect</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div className="border-t border-gray-200 pt-4">
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-sm font-semibold text-yellow-900 mb-2">
+                        Google Cloud Console - OAuth App Status
+                      </p>
+                      <div className="space-y-2 text-sm text-yellow-800">
+                        <p className="font-medium">⚠️ CRITICAL: Check your OAuth app publishing status</p>
+                        <ol className="list-decimal list-inside space-y-1 ml-2">
+                          <li>Go to: <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer" className="underline font-mono text-blue-700">Google Cloud Console → APIs & Services → Credentials</a></li>
+                          <li>Click on your OAuth 2.0 Client ID: <code className="bg-yellow-100 px-1 rounded">{maskClientId(clientId)}</code></li>
+                          <li>Navigate to: <a href="https://console.cloud.google.com/apis/credentials/consent" target="_blank" rel="noopener noreferrer" className="underline font-mono text-blue-700">OAuth consent screen</a></li>
+                          <li className="font-semibold">Check Publishing Status:</li>
+                        </ol>
+                        <div className="mt-3 ml-6 space-y-2">
+                          <div className="bg-white rounded border border-yellow-300 p-3">
+                            <p className="font-semibold text-yellow-900">🔒 If "Testing" Mode:</p>
+                            <ul className="mt-1 space-y-1 text-xs">
+                              <li>• Only test users can connect</li>
+                              <li>• Owner email: <code className="bg-gray-100 px-1 rounded">jackson@bliztic.com</code></li>
+                              <li>• <strong className="text-red-700">grant@kag.systems MUST be added to test users</strong></li>
+                              <li>• Maximum 100 test users allowed</li>
+                              <li>• Non-test users get <code className="bg-red-100 px-1 rounded">invalid_grant</code> error</li>
+                            </ul>
+                          </div>
+                          <div className="bg-white rounded border border-green-300 p-3">
+                            <p className="font-semibold text-green-900">✅ If "Production" Mode:</p>
+                            <ul className="mt-1 space-y-1 text-xs">
+                              <li>• All email addresses can connect</li>
+                              <li>• Requires Google verification for sensitive scopes</li>
+                              <li>• May take 1-2 weeks for verification</li>
+                            </ul>
+                          </div>
+                        </div>
+                        <div className="mt-3 p-3 bg-white rounded border border-yellow-300">
+                          <p className="font-semibold text-sm">✅ Quick Fix for Testing:</p>
+                          <ol className="mt-1 space-y-1 text-xs list-decimal list-inside ml-2">
+                            <li>Go to OAuth consent screen</li>
+                            <li>Scroll to "Test users" section</li>
+                            <li>Click "+ ADD USERS"</li>
+                            <li>Add: <code className="bg-gray-100 px-1 rounded font-semibold">grant@kag.systems</code></li>
+                            <li>Click "SAVE"</li>
+                            <li>Retry Gmail connection</li>
+                          </ol>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <div className="border-t border-gray-200 pt-4">
