@@ -132,9 +132,12 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
+    console.log("🔔 Webhook received from Make.com");
     const payload: WebhookPayload = await req.json();
+    console.log("📦 Payload:", JSON.stringify(payload, null, 2));
 
     if (!payload.user_id || !payload.results || !Array.isArray(payload.results)) {
+      console.error("❌ Invalid payload format:", payload);
       return new Response(
         JSON.stringify({ error: "Invalid payload format" }),
         {
@@ -143,6 +146,8 @@ Deno.serve(async (req: Request) => {
         }
       );
     }
+
+    console.log(`✅ Processing ${payload.results.length} email classifications for user: ${payload.user_id}`);
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -215,6 +220,10 @@ Deno.serve(async (req: Request) => {
 
     for (const result of payload.results) {
       try {
+        console.log(`\n📧 Processing email: ${result.message_id}`);
+        console.log(`   Classification: ${result.classification}`);
+        console.log(`   Confidence: ${result.ai_confidence_score}`);
+
         const { data: email, error: fetchError } = await supabase
           .from("emails")
           .select("*")
@@ -223,36 +232,47 @@ Deno.serve(async (req: Request) => {
           .maybeSingle();
 
         if (fetchError) {
-          console.error("Error fetching email:", fetchError);
+          console.error(`❌ Error fetching email ${result.message_id}:`, fetchError);
           errors.push({ message_id: result.message_id, error: fetchError.message });
           continue;
         }
 
         if (!email) {
+          console.error(`❌ Email not found in database: ${result.message_id}`);
           errors.push({ message_id: result.message_id, error: "Email not found" });
           continue;
         }
 
+        console.log(`✓ Found email in database (ID: ${email.id})`);
+        console.log(`   Current classification: ${email.classification}`);
+
         // Update email classification in database
+        const updateData = {
+          classification: result.classification,
+          ai_confidence_score: result.ai_confidence_score,
+          ai_reasoning: result.ai_reasoning,
+          action_taken: result.action_taken || null,
+          processed_at: new Date().toISOString(),
+        };
+
+        console.log(`💾 Updating database with:`, JSON.stringify(updateData, null, 2));
+
         const { error: updateError } = await supabase
           .from("emails")
-          .update({
-            classification: result.classification,
-            ai_confidence_score: result.ai_confidence_score,
-            ai_reasoning: result.ai_reasoning,
-            action_taken: result.action_taken || null,
-            processed_at: new Date().toISOString(),
-          })
+          .update(updateData)
           .eq("id", email.id);
 
         if (updateError) {
-          console.error("Error updating email:", updateError);
+          console.error(`❌ Error updating email ${result.message_id}:`, updateError);
           errors.push({ message_id: result.message_id, error: updateError.message });
           continue;
         }
 
+        console.log(`✅ Database updated successfully for ${result.message_id}`);
+
         // Move email to InboxDefender folder
         if (hasLabelMapping && accessToken) {
+          console.log(`📂 Moving email to InboxDefender/${result.classification} folder...`);
           const moveResult = await moveEmailToFolder(
             result.message_id,
             result.classification,
@@ -261,6 +281,7 @@ Deno.serve(async (req: Request) => {
           );
 
           if (moveResult.success) {
+            console.log(`✅ Email moved successfully`);
             // Update email record to mark as moved
             await supabase
               .from("emails")
@@ -273,6 +294,7 @@ Deno.serve(async (req: Request) => {
 
             moved.push(result.message_id);
           } else {
+            console.error(`❌ Failed to move email ${result.message_id}:`, moveResult.error);
             // Log move error for retry
             await supabase
               .from("emails")
@@ -281,8 +303,13 @@ Deno.serve(async (req: Request) => {
                 move_error: moveResult.error,
               })
               .eq("id", email.id);
-
-            console.error(`Failed to move email ${result.message_id}:`, moveResult.error);
+          }
+        } else {
+          if (!hasLabelMapping) {
+            console.warn(`⚠️  No label mapping available - email won't be moved`);
+          }
+          if (!accessToken) {
+            console.warn(`⚠️  No access token available - email won't be moved`);
           }
         }
 
@@ -331,14 +358,22 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    const response = {
+      success: true,
+      processed: payload.results.length,
+      updated: updates.length,
+      moved: moved.length,
+      errors: errors.length > 0 ? errors : undefined,
+    };
+
+    console.log("\n📊 WEBHOOK PROCESSING COMPLETE");
+    console.log(`   Processed: ${response.processed}`);
+    console.log(`   Updated: ${response.updated}`);
+    console.log(`   Moved: ${response.moved}`);
+    console.log(`   Errors: ${errors.length}`);
+
     return new Response(
-      JSON.stringify({
-        success: true,
-        processed: payload.results.length,
-        updated: updates.length,
-        moved: moved.length,
-        errors: errors.length > 0 ? errors : undefined,
-      }),
+      JSON.stringify(response),
       {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
