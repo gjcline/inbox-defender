@@ -14,7 +14,7 @@ Server-side Gmail sync runs every 15 minutes using pg_cron, automatically refres
 ### Edge Function Updates
 - Automatic token refresh before Gmail API calls (if expires within 2 minutes)
 - Invalid grant handling (marks connection inactive if user revoked access)
-- Default Make.com webhook: `https://hook.us2.make.com/qd1axtiygb3ivkcrgqqke0phfof2mcj7`
+- Default Make.com webhook: `https://hook.us2.make.com/7lw1o5aue39unp8vdxb56y1ny4abtskw`
 - Sync history tracking with detailed metrics
 - Structured JSON logging for observability
 
@@ -66,5 +66,5 @@ LIMIT 5;
 
 If `make_webhook_url` is NULL, uses:
 ```
-https://hook.us2.make.com/qd1axtiygb3ivkcrgqqke0phfof2mcj7
+https://hook.us2.make.com/7lw1o5aue39unp8vdxb56y1ny4abtskw
 ```

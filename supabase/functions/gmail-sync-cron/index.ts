@@ -7,7 +7,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
-const DEFAULT_MAKE_WEBHOOK = "https://hook.us2.make.com/qd1axtiygb3ivkcrgqqke0phfof2mcj7";
+const DEFAULT_MAKE_WEBHOOK = "https://hook.us2.make.com/7lw1o5aue39unp8vdxb56y1ny4abtskw";
 const ADVISORY_LOCK_KEY = 851234;
 
 interface GmailMessage {

@@ -227,7 +227,7 @@ SELECT pg_advisory_unlock_all();
 
 If `make_webhook_url` is NULL in `gmail_connections`:
 ```
-https://hook.us2.make.com/qd1axtiygb3ivkcrgqqke0phfof2mcj7
+https://hook.us2.make.com/7lw1o5aue39unp8vdxb56y1ny4abtskw
 ```
 
 ## Security Notes
