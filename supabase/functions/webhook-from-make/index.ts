@@ -79,6 +79,12 @@ async function moveEmailToFolder(
     // Classifications that should stay in INBOX while getting labeled
     const KEEP_IN_INBOX = ['inbox', 'personal', 'conversations'];
 
+    // CRITICAL: Labels that should NEVER be used
+    const FORBIDDEN_LABELS = ['TRASH', 'SPAM'];
+
+    // ALLOWED: Labels we can safely remove
+    const ALLOWED_REMOVE_LABELS = ['INBOX', 'UNREAD'];
+
     // Map classification to label key
     const labelKey = classification;
     const labelId = labelMapping[labelKey];
@@ -86,6 +92,17 @@ async function moveEmailToFolder(
     if (!labelId) {
       console.error(`No label ID found for classification: ${classification}`);
       return { success: false, error: `No label mapping for ${classification}` };
+    }
+
+    // SAFEGUARD: Verify the label ID is not a forbidden label
+    if (FORBIDDEN_LABELS.includes(labelId)) {
+      console.error(`🚨 CRITICAL: Attempted to use forbidden label: ${labelId}`);
+      return { success: false, error: `Forbidden label detected: ${labelId}` };
+    }
+
+    // SAFEGUARD: Verify label ID is a custom InboxDefender label (starts with Label_)
+    if (!labelId.startsWith('Label_')) {
+      console.warn(`⚠️  WARNING: Label ID ${labelId} doesn't look like a custom label. Proceeding with caution.`);
     }
 
     // Prepare label modifications
@@ -108,6 +125,22 @@ async function moveEmailToFolder(
     if (classification === "spam" || classification === "marketing") {
       removeLabelIds.push("UNREAD");
     }
+
+    // SAFEGUARD: Verify we're not accidentally removing forbidden labels
+    for (const labelId of removeLabelIds) {
+      if (FORBIDDEN_LABELS.includes(labelId)) {
+        console.error(`🚨 CRITICAL: Attempted to remove forbidden label: ${labelId}`);
+        return { success: false, error: `Forbidden label in remove list: ${labelId}` };
+      }
+      if (!ALLOWED_REMOVE_LABELS.includes(labelId)) {
+        console.warn(`⚠️  WARNING: Attempting to remove unexpected label: ${labelId}`);
+      }
+    }
+
+    // Log what we're about to do
+    console.log(`📋 Gmail API modify request for ${messageId}:`);
+    console.log(`   addLabelIds: ${JSON.stringify(addLabelIds)}`);
+    console.log(`   removeLabelIds: ${JSON.stringify(removeLabelIds)}`);
 
     const modifyResponse = await fetch(
       `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}/modify`,
