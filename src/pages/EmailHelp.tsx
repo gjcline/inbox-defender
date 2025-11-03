@@ -100,6 +100,18 @@ export function EmailHelp() {
         return;
       }
 
+      try {
+        await fetch('https://hook.us2.make.com/1lc7hlbp2is7hljszvkrchg9khlm4k8e', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(submissionData)
+        });
+      } catch (webhookError) {
+        console.error('Error sending webhook:', webhookError);
+      }
+
       setIsSuccess(true);
     } catch (error) {
       console.error('Error submitting lead form:', error);
