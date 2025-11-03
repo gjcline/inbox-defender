@@ -15,10 +15,10 @@ export function SyncStatus({ lastSyncAt, onManualSync, isSyncing }: SyncStatusPr
 
   useEffect(() => {
     const updateTimes = () => {
-      // Calculate time until next sync (15 minutes from last sync)
+      // Calculate time until next sync (5 minutes from last sync)
       if (lastSyncAt) {
         const lastSync = new Date(lastSyncAt);
-        const nextSync = new Date(lastSync.getTime() + 15 * 60 * 1000); // 15 minutes
+        const nextSync = new Date(lastSync.getTime() + 5 * 60 * 1000); // 5 minutes
         const now = new Date();
         const msUntilNextSync = nextSync.getTime() - now.getTime();
 
