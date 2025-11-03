@@ -269,6 +269,7 @@ async function ensureValidToken(
 
 Deno.serve(async (req: Request) => {
   console.log("=== Gmail Sync Cron Started ===");
+  console.log("🔄 Automatic sync triggered (5-min interval)");
   console.log("Timestamp:", new Date().toISOString());
 
   if (req.method === "OPTIONS") {
