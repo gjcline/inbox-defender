@@ -6,7 +6,7 @@ import { Loader2, CheckCircle } from 'lucide-react';
 
 const INTEREST_OPTIONS = [
   'Cleaning up My inbox for Maximum Productivity',
-  'Automatically Filtering and Unsubscribing to Spam',
+  'Automatically Unsubscribing to Cold Emails and Spam',
   'Getting Paid to Receive Emails',
   'Getting a lifetime discount for Signing up Early',
   'Other'
