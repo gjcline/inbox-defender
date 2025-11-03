@@ -200,6 +200,44 @@ export interface Database {
           updated_at?: string
         }
       }
+      lead_form_submissions: {
+        Row: {
+          id: string
+          name: string
+          email: string
+          company: string | null
+          email_volume: string
+          biggest_challenge: string | null
+          source: string
+          notes: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          email: string
+          company?: string | null
+          email_volume: string
+          biggest_challenge?: string | null
+          source?: string
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          email?: string
+          company?: string | null
+          email_volume?: string
+          biggest_challenge?: string | null
+          source?: string
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+      }
     }
   }
 }

@@ -8,6 +8,7 @@ import { NylasCallback } from './pages/NylasCallback';
 import { OAuthDiagnostics } from './pages/OAuthDiagnostics';
 import { Terms } from './pages/Terms';
 import { Privacy } from './pages/Privacy';
+import { EmailHelp } from './pages/EmailHelp';
 import { AuthProvider } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 
@@ -18,6 +19,7 @@ function App() {
         <Route path="/" element={<Landing />} />
         <Route path="/terms" element={<Terms />} />
         <Route path="/privacy" element={<Privacy />} />
+        <Route path="/email-help" element={<EmailHelp />} />
         <Route
           path="/dashboard"
           element={
