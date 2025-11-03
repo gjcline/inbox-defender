@@ -40,8 +40,8 @@ const plans = [
   {
     name: "Enterprise",
     description: "Advanced plan for large teams",
-    price: 47,
-    yearlyPrice: 469,
+    price: null,
+    yearlyPrice: null,
     buttonText: "Contact Sales",
     buttonVariant: "outline" as const,
     includes: [
@@ -253,19 +253,25 @@ export default function PricingSection4() {
                   )}
                 </div>
                 <div className="flex items-baseline">
-                  <span className="text-4xl font-semibold">
-                    $
-                    <NumberFlow
-                      format={{
-                        currency: "USD",
-                      }}
-                      value={isYearly ? plan.yearlyPrice : plan.price}
-                      className="text-4xl font-semibold"
-                    />
-                  </span>
-                  <span className="text-gray-300 ml-1">
-                    /{isYearly ? "year" : "month"}
-                  </span>
+                  {plan.price !== null ? (
+                    <>
+                      <span className="text-4xl font-semibold">
+                        $
+                        <NumberFlow
+                          format={{
+                            currency: "USD",
+                          }}
+                          value={isYearly ? plan.yearlyPrice : plan.price}
+                          className="text-4xl font-semibold"
+                        />
+                      </span>
+                      <span className="text-gray-300 ml-1">
+                        /{isYearly ? "year" : "month"}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-4xl font-semibold">Let's Talk</span>
+                  )}
                 </div>
                 <p className="text-sm text-gray-300 mb-4">{plan.description}</p>
               </CardHeader>
