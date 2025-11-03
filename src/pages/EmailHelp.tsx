@@ -152,11 +152,11 @@ export function EmailHelp() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <img
-                    src="/logoexample1.png"
-                    alt="Inbox Defender logo"
+                    src="/LIZTIC_logo_white.webp"
+                    alt="Bliztic logo"
                     className="h-8 w-8"
                   />
-                  <h1 className="text-2xl font-semibold text-white">Inbox Defender</h1>
+                  <h1 className="text-2xl font-semibold text-white">Bliztic</h1>
                 </div>
                 <div className="flex items-center gap-6">
                   <a
@@ -242,11 +242,11 @@ export function EmailHelp() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <img
-                  src="/logoexample1.png"
-                  alt="Inbox Defender logo"
+                  src="/LIZTIC_logo_white.webp"
+                  alt="Bliztic logo"
                   className="h-8 w-8"
                 />
-                <h1 className="text-2xl font-semibold text-white">Inbox Defender</h1>
+                <h1 className="text-2xl font-semibold text-white">Bliztic</h1>
               </div>
               <div className="flex items-center gap-6">
                 <a
