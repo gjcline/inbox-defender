@@ -256,44 +256,6 @@ export function EmailHelp() {
           </p>
         </div>
 
-        <div className="grid md:grid-cols-3 gap-8 mb-16">
-          <div className="bg-slate-50 rounded-xl p-6 border border-slate-200">
-            <div className="bg-blue-100 rounded-lg w-12 h-12 flex items-center justify-center mb-4">
-              <Target className="w-6 h-6 text-blue-600" />
-            </div>
-            <h3 className="text-lg font-semibold text-slate-900 mb-2">
-              Understand Why Emails Are Filtered
-            </h3>
-            <p className="text-slate-600">
-              Get clear insights into the technical factors causing your emails to be filtered or marked as spam.
-            </p>
-          </div>
-
-          <div className="bg-slate-50 rounded-xl p-6 border border-slate-200">
-            <div className="bg-blue-100 rounded-lg w-12 h-12 flex items-center justify-center mb-4">
-              <TrendingUp className="w-6 h-6 text-blue-600" />
-            </div>
-            <h3 className="text-lg font-semibold text-slate-900 mb-2">
-              Learn the Technical Fixes
-            </h3>
-            <p className="text-slate-600">
-              Discover specific, actionable steps to improve your email authentication, reputation, and deliverability.
-            </p>
-          </div>
-
-          <div className="bg-slate-50 rounded-xl p-6 border border-slate-200">
-            <div className="bg-blue-100 rounded-lg w-12 h-12 flex items-center justify-center mb-4">
-              <Shield className="w-6 h-6 text-blue-600" />
-            </div>
-            <h3 className="text-lg font-semibold text-slate-900 mb-2">
-              Get Personalized Recommendations
-            </h3>
-            <p className="text-slate-600">
-              Receive tailored guidance based on your specific email setup, volume, and sending patterns.
-            </p>
-          </div>
-        </div>
-
         <div className="max-w-2xl mx-auto">
           <div className="bg-white rounded-2xl border-2 border-slate-200 p-8 shadow-lg">
             <h2 className="text-2xl font-semibold text-slate-900 mb-6 text-center">
@@ -426,6 +388,44 @@ export function EmailHelp() {
             <p className="text-xs text-slate-500">
               By submitting this form, you agree to receive email communication from Bliztic.
               You can unsubscribe at any time.
+            </p>
+          </div>
+        </div>
+
+        <div className="grid md:grid-cols-3 gap-8 mt-16">
+          <div className="bg-slate-50 rounded-xl p-6 border border-slate-200">
+            <div className="bg-blue-100 rounded-lg w-12 h-12 flex items-center justify-center mb-4">
+              <Target className="w-6 h-6 text-blue-600" />
+            </div>
+            <h3 className="text-lg font-semibold text-slate-900 mb-2">
+              Understand Why Emails Are Filtered
+            </h3>
+            <p className="text-slate-600">
+              Get clear insights into the technical factors causing your emails to be filtered or marked as spam.
+            </p>
+          </div>
+
+          <div className="bg-slate-50 rounded-xl p-6 border border-slate-200">
+            <div className="bg-blue-100 rounded-lg w-12 h-12 flex items-center justify-center mb-4">
+              <TrendingUp className="w-6 h-6 text-blue-600" />
+            </div>
+            <h3 className="text-lg font-semibold text-slate-900 mb-2">
+              Learn the Technical Fixes
+            </h3>
+            <p className="text-slate-600">
+              Discover specific, actionable steps to improve your email authentication, reputation, and deliverability.
+            </p>
+          </div>
+
+          <div className="bg-slate-50 rounded-xl p-6 border border-slate-200">
+            <div className="bg-blue-100 rounded-lg w-12 h-12 flex items-center justify-center mb-4">
+              <Shield className="w-6 h-6 text-blue-600" />
+            </div>
+            <h3 className="text-lg font-semibold text-slate-900 mb-2">
+              Get Personalized Recommendations
+            </h3>
+            <p className="text-slate-600">
+              Receive tailored guidance based on your specific email setup, volume, and sending patterns.
             </p>
           </div>
         </div>
