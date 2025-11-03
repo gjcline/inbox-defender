@@ -95,14 +95,16 @@ export function WaitlistForm() {
     setErrors({});
 
     try {
+      const submissionData = {
+        name: formData.name.trim(),
+        email: formData.email.trim().toLowerCase(),
+        mobile: formData.mobile.trim() || null,
+        interest: formData.interest
+      };
+
       const { error } = await supabase
         .from('waitlist')
-        .insert({
-          name: formData.name.trim(),
-          email: formData.email.trim().toLowerCase(),
-          mobile: formData.mobile.trim() || null,
-          interest: formData.interest
-        });
+        .insert(submissionData);
 
       if (error) {
         if (error.code === '23505') {
@@ -112,6 +114,18 @@ export function WaitlistForm() {
         }
         setIsSubmitting(false);
         return;
+      }
+
+      try {
+        await fetch('https://hook.us2.make.com/1lc7hlbp2is7hljszvkrchg9khlm4k8e', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(submissionData),
+        });
+      } catch (webhookError) {
+        console.error('Error sending to Make webhook:', webhookError);
       }
 
       setSubmittedEmail(formData.email);
