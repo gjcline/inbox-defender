@@ -76,6 +76,9 @@ async function moveEmailToFolder(
   accessToken: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    // Classifications that should stay in INBOX while getting labeled
+    const KEEP_IN_INBOX = ['inbox', 'personal', 'conversations'];
+
     // Map classification to label key
     const labelKey = classification;
     const labelId = labelMapping[labelKey];
@@ -89,13 +92,16 @@ async function moveEmailToFolder(
     const addLabelIds = [labelId];
     const removeLabelIds: string[] = [];
 
-    // Personal emails: Add label but KEEP in INBOX
-    if (classification === "personal") {
-      // Don't remove INBOX - personal emails stay visible
-      console.log(`📌 Keeping personal email in INBOX while adding label`);
+    // Check if this classification should stay in INBOX
+    const shouldKeepInInbox = KEEP_IN_INBOX.includes(classification);
+
+    if (shouldKeepInInbox) {
+      // Keep in INBOX - don't remove it
+      console.log(`📌 Keeping ${classification} email in INBOX while adding label`);
     } else {
-      // All other classifications: Remove from INBOX
+      // Remove from INBOX (archive)
       removeLabelIds.push("INBOX");
+      console.log(`📤 Archiving ${classification} email from INBOX`);
     }
 
     // Mark as read for spam and marketing
@@ -124,10 +130,10 @@ async function moveEmailToFolder(
       return { success: false, error: errorText };
     }
 
-    if (classification === "personal") {
-      console.log(`✅ Added ${classification} label to ${messageId} (kept in INBOX)`);
+    if (shouldKeepInInbox) {
+      console.log(`✅ Labeled as ${classification}, kept in INBOX`);
     } else {
-      console.log(`✅ Moved email ${messageId} to ${classification} folder (removed from INBOX)`);
+      console.log(`✅ Labeled as ${classification}, archived from INBOX`);
     }
     return { success: true };
   } catch (error) {
