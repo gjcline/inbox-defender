@@ -76,6 +76,10 @@ async function moveEmailToFolder(
   accessToken: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    console.log(`\n🔧 === MOVING EMAIL ${messageId} ===`);
+    console.log(`   Classification: ${classification}`);
+    console.log(`   Label Mapping: ${JSON.stringify(labelMapping)}`);
+
     // Classifications that should stay in INBOX while getting labeled
     const KEEP_IN_INBOX = ['inbox', 'personal', 'conversations'];
 
@@ -89,6 +93,8 @@ async function moveEmailToFolder(
     const labelKey = classification;
     const labelId = labelMapping[labelKey];
 
+    console.log(`   Looking up label for "${labelKey}" -> "${labelId}"`);
+
     if (!labelId) {
       console.error(`No label ID found for classification: ${classification}`);
       return { success: false, error: `No label mapping for ${classification}` };
@@ -97,13 +103,20 @@ async function moveEmailToFolder(
     // SAFEGUARD: Verify the label ID is not a forbidden label
     if (FORBIDDEN_LABELS.includes(labelId)) {
       console.error(`🚨 CRITICAL: Attempted to use forbidden label: ${labelId}`);
+      console.error(`   This should NEVER happen! Aborting email move.`);
       return { success: false, error: `Forbidden label detected: ${labelId}` };
     }
 
     // SAFEGUARD: Verify label ID is a custom InboxDefender label (starts with Label_)
     if (!labelId.startsWith('Label_')) {
-      console.warn(`⚠️  WARNING: Label ID ${labelId} doesn't look like a custom label. Proceeding with caution.`);
+      console.error(`🚨 CRITICAL: Label ID ${labelId} doesn't look like a custom label!`);
+      console.error(`   Expected format: Label_X where X is a number`);
+      console.error(`   Got: ${labelId}`);
+      console.error(`   ABORTING to prevent damage`);
+      return { success: false, error: `Invalid label ID format: ${labelId}` };
     }
+
+    console.log(`   ✅ Label ID validation passed: ${labelId}`);
 
     // Prepare label modifications
     const addLabelIds = [labelId];
@@ -127,20 +140,42 @@ async function moveEmailToFolder(
     }
 
     // SAFEGUARD: Verify we're not accidentally removing forbidden labels
+    console.log(`   Validating removeLabelIds: ${JSON.stringify(removeLabelIds)}`);
     for (const labelId of removeLabelIds) {
       if (FORBIDDEN_LABELS.includes(labelId)) {
         console.error(`🚨 CRITICAL: Attempted to remove forbidden label: ${labelId}`);
+        console.error(`   ABORTING to prevent damage`);
         return { success: false, error: `Forbidden label in remove list: ${labelId}` };
       }
       if (!ALLOWED_REMOVE_LABELS.includes(labelId)) {
-        console.warn(`⚠️  WARNING: Attempting to remove unexpected label: ${labelId}`);
+        console.error(`🚨 CRITICAL: Attempting to remove unexpected label: ${labelId}`);
+        console.error(`   Only INBOX and UNREAD can be removed`);
+        console.error(`   ABORTING to prevent damage`);
+        return { success: false, error: `Disallowed label in remove list: ${labelId}` };
+      }
+      console.log(`   ✅ Validated remove label: ${labelId}`);
+    }
+
+    // FINAL SAFEGUARD: Double-check addLabelIds one more time
+    console.log(`   Final validation of addLabelIds: ${JSON.stringify(addLabelIds)}`);
+    for (const labelId of addLabelIds) {
+      if (FORBIDDEN_LABELS.includes(labelId)) {
+        console.error(`🚨🚨🚨 CRITICAL: FORBIDDEN LABEL IN ADD LIST: ${labelId}`);
+        console.error(`   THIS IS A BUG! Email will NOT be moved.`);
+        return { success: false, error: `CRITICAL: Forbidden label in add list: ${labelId}` };
+      }
+      if (!labelId.startsWith('Label_')) {
+        console.error(`🚨🚨🚨 CRITICAL: INVALID LABEL FORMAT IN ADD LIST: ${labelId}`);
+        console.error(`   THIS IS A BUG! Email will NOT be moved.`);
+        return { success: false, error: `CRITICAL: Invalid label format: ${labelId}` };
       }
     }
 
     // Log what we're about to do
-    console.log(`📋 Gmail API modify request for ${messageId}:`);
-    console.log(`   addLabelIds: ${JSON.stringify(addLabelIds)}`);
-    console.log(`   removeLabelIds: ${JSON.stringify(removeLabelIds)}`);
+    console.log(`\n📋 FINAL Gmail API modify request for ${messageId}:`);
+    console.log(`   ➕ ADD labels: ${JSON.stringify(addLabelIds)}`);
+    console.log(`   ➖ REMOVE labels: ${JSON.stringify(removeLabelIds)}`);
+    console.log(`   Sending to Gmail API now...`);
 
     const modifyResponse = await fetch(
       `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}/modify`,
@@ -159,15 +194,27 @@ async function moveEmailToFolder(
 
     if (!modifyResponse.ok) {
       const errorText = await modifyResponse.text();
-      console.error(`Failed to move email ${messageId}:`, errorText);
+      console.error(`❌ Gmail API modify FAILED for ${messageId}:`, errorText);
       return { success: false, error: errorText };
     }
 
-    if (shouldKeepInInbox) {
-      console.log(`✅ Labeled as ${classification}, kept in INBOX`);
-    } else {
-      console.log(`✅ Labeled as ${classification}, archived from INBOX`);
+    const responseData = await modifyResponse.json();
+    console.log(`✅ Gmail API modify SUCCEEDED for ${messageId}`);
+    console.log(`   Response labelIds: ${JSON.stringify(responseData.labelIds || [])}`);
+
+    // VERIFY: Check the response to make sure TRASH is not in the labels
+    if (responseData.labelIds && responseData.labelIds.includes('TRASH')) {
+      console.error(`🚨🚨🚨 CRITICAL BUG: Email ${messageId} now has TRASH label!`);
+      console.error(`   We did NOT add TRASH, but Gmail API returned it in labels`);
+      console.error(`   This should be investigated immediately`);
     }
+
+    if (shouldKeepInInbox) {
+      console.log(`✅ SUCCESS: Labeled as ${classification}, kept in INBOX`);
+    } else {
+      console.log(`✅ SUCCESS: Labeled as ${classification}, archived from INBOX`);
+    }
+    console.log(`🔧 === EMAIL MOVE COMPLETE ===\n`);
     return { success: true };
   } catch (error) {
     console.error(`Exception moving email ${messageId}:`, error);
