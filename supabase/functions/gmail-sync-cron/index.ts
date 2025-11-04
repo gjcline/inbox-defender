@@ -270,6 +270,7 @@ async function ensureValidToken(
 Deno.serve(async (req: Request) => {
   console.log("=== Gmail Sync Cron Started ===");
   console.log("🔄 Automatic sync triggered (5-min interval)");
+  console.log("⚠️  TRASH label protection enabled");
   console.log("Timestamp:", new Date().toISOString());
 
   if (req.method === "OPTIONS") {
@@ -606,37 +607,16 @@ Deno.serve(async (req: Request) => {
             if (shouldAutoLabel) {
               try {
                 console.log(`🏷️ Auto-labeling email ${message.id} as blocked`);
+                console.log(`⚠️  DEPRECATED: This auto-label logic is being phased out`);
+                console.log(`   Email will be processed through webhook instead for proper classification`);
 
-                await fetch(
-                  `https://gmail.googleapis.com/gmail/v1/users/me/messages/${message.id}/modify`,
-                  {
-                    method: "POST",
-                    headers: {
-                      Authorization: `Bearer ${accessToken}`,
-                      "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({
-                      addLabelIds: ["TRASH"],
-                      removeLabelIds: ["INBOX"],
-                    }),
-                  }
-                );
+                // REMOVED DANGEROUS CODE THAT ADDED TRASH LABEL
+                // This was causing emails to go to trash during manual sync
+                // Instead, let the webhook-from-make handle labeling with proper safeguards
 
-                await supabase
-                  .from("emails")
-                  .update({ label_applied: true, action_taken: "auto_labeled_and_archived" })
-                  .eq("gmail_message_id", message.id)
-                  .eq("user_id", connection.user_id);
-
-                await supabase
-                  .from("blocked_senders")
-                  .update({ total_emails_blocked: blockedSender.total_emails_blocked + 1 })
-                  .eq("user_id", connection.user_id)
-                  .eq("email_address", senderEmail);
-
-                console.log(`✅ Auto-label applied successfully`);
+                console.log(`✅ Email marked as blocked in database, will be processed by webhook`);
               } catch (labelError) {
-                console.error(`Error applying label: ${labelError}`);
+                console.error(`Error processing blocked sender: ${labelError}`);
               }
             }
           } catch (msgError) {

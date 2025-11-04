@@ -1,0 +1,16 @@
+CRITICAL FIX DEPLOYED:
+
+Removed the dangerous auto-labeling code from gmail-sync-cron that was adding TRASH labels.
+
+LINE 619 (OLD CODE - REMOVED):
+  addLabelIds: ["TRASH"],
+
+This was causing emails from repeat offenders to go directly to TRASH during manual sync.
+
+NEW BEHAVIOR:
+- Emails from blocked senders are marked as "blocked" in database
+- They are sent to webhook-from-make for proper classification
+- webhook-from-make has comprehensive TRASH protection safeguards
+- No direct TRASH labeling anywhere in the codebase
+
+The Edge Function needs to be manually redeployed via Supabase dashboard or CLI.
