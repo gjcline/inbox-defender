@@ -76,9 +76,11 @@ async function moveEmailToFolder(
   accessToken: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    console.log(`\n🔧 === MOVING EMAIL ${messageId} ===`);
-    console.log(`   Classification: ${classification}`);
-    console.log(`   Label Mapping: ${JSON.stringify(labelMapping)}`);
+    console.log(`\n🔧 === EMAIL MOVE DEBUG START ===`);
+    console.log(`Message ID: ${messageId}`);
+    console.log(`Classification: ${classification}`);
+    console.log(`Label mapping from DB: ${JSON.stringify(labelMapping, null, 2)}`);
+    console.log(`Access token length: ${accessToken.length}`);
 
     // Classifications that should stay in INBOX while getting labeled
     const KEEP_IN_INBOX = ['inbox', 'personal', 'conversations'];
@@ -93,7 +95,8 @@ async function moveEmailToFolder(
     const labelKey = classification;
     const labelId = labelMapping[labelKey];
 
-    console.log(`   Looking up label for "${labelKey}" -> "${labelId}"`);
+    console.log(`Looking up label for "${labelKey}" -> "${labelId}"`);
+    console.log(`Selected label ID: ${labelId}`);
 
     if (!labelId) {
       console.error(`No label ID found for classification: ${classification}`);
@@ -121,6 +124,9 @@ async function moveEmailToFolder(
     // Prepare label modifications
     const addLabelIds = [labelId];
     const removeLabelIds: string[] = [];
+
+    console.log(`Initial add label IDs: ${JSON.stringify(addLabelIds)}`);
+    console.log(`Initial remove label IDs: ${JSON.stringify(removeLabelIds)}`);
 
     // Check if this classification should stay in INBOX
     const shouldKeepInInbox = KEEP_IN_INBOX.includes(classification);
@@ -155,6 +161,30 @@ async function moveEmailToFolder(
       }
       console.log(`   ✅ Validated remove label: ${labelId}`);
     }
+
+    // NUCLEAR-LEVEL SAFEGUARD: Block ANY system labels
+    const SYSTEM_LABELS = ['TRASH', 'SPAM', 'IMPORTANT', 'STARRED', 'SENT', 'DRAFT'];
+
+    console.log(`\n🛡️  === NUCLEAR SAFEGUARD CHECK ===`);
+    console.log(`Checking addLabelIds against system labels...`);
+    for (const id of addLabelIds) {
+      if (SYSTEM_LABELS.includes(id)) {
+        console.error(`🚨🚨🚨 BLOCKED: Attempt to add system label: ${id}`);
+        console.error(`Add label IDs that were blocked: ${JSON.stringify(addLabelIds)}`);
+        throw new Error(`Cannot add system labels: ${id}`);
+      }
+    }
+
+    console.log(`Checking removeLabelIds against forbidden labels...`);
+    for (const id of removeLabelIds) {
+      if (SYSTEM_LABELS.includes(id) && id !== 'UNREAD') {
+        console.error(`🚨🚨🚨 BLOCKED: Attempt to remove system label: ${id}`);
+        console.error(`Remove label IDs that were blocked: ${JSON.stringify(removeLabelIds)}`);
+        throw new Error(`Cannot remove system labels: ${id}`);
+      }
+    }
+    console.log(`✅ Nuclear safeguard passed - no system labels detected`);
+    console.log(`=== END NUCLEAR SAFEGUARD CHECK ===\n`);
 
     // FINAL SAFEGUARD: Double-check addLabelIds one more time
     console.log(`   Final validation of addLabelIds: ${JSON.stringify(addLabelIds)}`);
@@ -214,7 +244,7 @@ async function moveEmailToFolder(
     } else {
       console.log(`✅ SUCCESS: Labeled as ${classification}, archived from INBOX`);
     }
-    console.log(`🔧 === EMAIL MOVE COMPLETE ===\n`);
+    console.log(`=== EMAIL MOVE DEBUG END ===\n`);
     return { success: true };
   } catch (error) {
     console.error(`Exception moving email ${messageId}:`, error);
@@ -308,6 +338,41 @@ Deno.serve(async (req: Request) => {
 
     const labelMapping = gmailConnection.label_mapping || {};
     const hasLabelMapping = Object.keys(labelMapping).length > 0;
+
+    console.log('\n=== EMERGENCY LABEL MAPPING AUDIT ===');
+    console.log('Label mapping from database:', JSON.stringify(labelMapping, null, 2));
+    console.log('Number of labels:', Object.keys(labelMapping).length);
+
+    // CRITICAL: Verify NO system labels in mapping
+    const SYSTEM_LABELS = ['TRASH', 'SPAM', 'IMPORTANT', 'STARRED', 'SENT', 'DRAFT', 'UNREAD'];
+    let containsSystemLabel = false;
+    for (const [key, labelId] of Object.entries(labelMapping)) {
+      console.log(`  Checking: ${key} -> ${labelId}`);
+      if (typeof labelId === 'string' && SYSTEM_LABELS.includes(labelId)) {
+        console.error(`🚨🚨🚨 CRITICAL BUG: System label found in mapping: ${key} -> ${labelId}`);
+        containsSystemLabel = true;
+      }
+      if (typeof labelId === 'string' && !labelId.startsWith('Label_')) {
+        console.error(`🚨 WARNING: Label ${labelId} doesn't match expected format (Label_xxx)`);
+      }
+    }
+
+    if (containsSystemLabel) {
+      console.error('🚨🚨🚨 ABORTING WEBHOOK: System labels detected in label_mapping!');
+      console.error('This is a critical bug. Email moving is DISABLED to prevent data loss.');
+      return new Response(
+        JSON.stringify({
+          error: 'CRITICAL: System labels detected in label mapping. Email moving disabled.',
+          label_mapping: labelMapping
+        }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+    console.log('✅ Label mapping audit passed: No system labels detected');
+    console.log('=== END LABEL MAPPING AUDIT ===\n');
 
     if (!hasLabelMapping) {
       console.warn("⚠️  No label_mapping found. Labels won't be created until reconnect.");
