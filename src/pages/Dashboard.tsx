@@ -397,7 +397,7 @@ export function Dashboard() {
       <nav className="border-b border-zinc-800 bg-zinc-900/50 backdrop-blur-sm">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
-            <h1 className="text-xl font-semibold text-white">Inbox Defender</h1>
+            <h1 className="text-xl font-semibold text-white">Inbox Defender by Bliztic</h1>
             <div className="flex items-center gap-3">
               <span className="text-sm text-zinc-400">{user?.email}</span>
               <button
