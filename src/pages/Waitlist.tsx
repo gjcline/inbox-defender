@@ -54,7 +54,7 @@ export function Waitlist() {
                   alt="Inbox Defender logo"
                   className="h-8 w-8"
                 />
-                <h1 className="text-2xl font-semibold text-white">Inbox Defender</h1>
+                <h1 className="text-2xl font-semibold text-white">Inbox Defender by Bliztic</h1>
               </div>
               <Button
                 onClick={() => navigate('/')}
