@@ -132,12 +132,16 @@ async function moveEmailToFolder(
     const shouldKeepInInbox = KEEP_IN_INBOX.includes(classification);
 
     if (shouldKeepInInbox) {
-      // Keep in INBOX - don't remove it
+      // CRITICAL FIX: Explicitly ADD INBOX label to prevent Gmail from moving to trash
+      // We add both the custom label AND INBOX to ensure it stays in inbox
+      addLabelIds.push("INBOX");
       console.log(`📌 Keeping ${classification} email in INBOX while adding label`);
+      console.log(`   ✅ EXPLICITLY adding INBOX label to prevent trash`);
     } else {
       // Remove from INBOX (archive)
       removeLabelIds.push("INBOX");
       console.log(`📤 Archiving ${classification} email from INBOX`);
+      console.log(`   ℹ️  Email will be archived (All Mail), NOT trashed`);
     }
 
     // Mark as read for spam and marketing
@@ -232,12 +236,82 @@ async function moveEmailToFolder(
     console.log(`✅ Gmail API modify SUCCEEDED for ${messageId}`);
     console.log(`   Response labelIds: ${JSON.stringify(responseData.labelIds || [])}`);
 
-    // VERIFY: Check the response to make sure TRASH is not in the labels
+    // CRITICAL: Check the response to make sure TRASH is not in the labels
     if (responseData.labelIds && responseData.labelIds.includes('TRASH')) {
-      console.error(`🚨🚨🚨 CRITICAL BUG: Email ${messageId} now has TRASH label!`);
+      console.error(`🚨🚨🚨 CRITICAL: Email ${messageId} was moved to TRASH!`);
       console.error(`   We did NOT add TRASH, but Gmail API returned it in labels`);
-      console.error(`   This should be investigated immediately`);
+      console.error(`   ATTEMPTING AUTOMATIC RECOVERY...`);
+
+      // AUTOMATIC RECOVERY: Remove TRASH label immediately
+      try {
+        const recoveryResponse = await fetch(
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}/modify`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              removeLabelIds: ['TRASH'],
+              addLabelIds: shouldKeepInInbox ? ['INBOX'] : [], // Put back in inbox if it should be there
+            }),
+          }
+        );
+
+        if (recoveryResponse.ok) {
+          console.log(`✅ RECOVERY SUCCESSFUL: Removed TRASH label from ${messageId}`);
+          if (shouldKeepInInbox) {
+            console.log(`   Email restored to INBOX with custom label`);
+          } else {
+            console.log(`   Email moved to All Mail (archived) as intended`);
+          }
+        } else {
+          console.error(`❌ RECOVERY FAILED: Could not remove TRASH label`);
+          return { success: false, error: 'Email incorrectly moved to trash, recovery failed' };
+        }
+      } catch (recoveryError) {
+        console.error(`❌ RECOVERY EXCEPTION:`, recoveryError);
+        return { success: false, error: `Email moved to trash, recovery failed: ${recoveryError.message}` };
+      }
     }
+
+    // FINAL VERIFICATION: Check email status after modification
+    console.log(`\n🔍 === POST-MOVE VERIFICATION ===`);
+    try {
+      const verifyResponse = await fetch(
+        `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}?format=minimal`,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        }
+      );
+
+      if (verifyResponse.ok) {
+        const verifyData = await verifyResponse.json();
+        const finalLabels = verifyData.labelIds || [];
+        console.log(`   Final labels on email: ${JSON.stringify(finalLabels)}`);
+
+        if (finalLabels.includes('TRASH')) {
+          console.error(`🚨 VERIFICATION FAILED: Email is STILL in TRASH after recovery attempt!`);
+          return { success: false, error: 'Email in trash after recovery' };
+        }
+
+        if (shouldKeepInInbox && !finalLabels.includes('INBOX')) {
+          console.error(`🚨 VERIFICATION WARNING: Email should be in INBOX but isn't`);
+        }
+
+        if (!shouldKeepInInbox && finalLabels.includes('INBOX')) {
+          console.warn(`⚠️  Email is still in INBOX when it should be archived`);
+        }
+
+        console.log(`   ✅ Verification passed - email is in correct location`);
+      }
+    } catch (verifyError) {
+      console.warn(`⚠️  Could not verify final email state:`, verifyError);
+    }
+    console.log(`=== END POST-MOVE VERIFICATION ===\n`);
 
     if (shouldKeepInInbox) {
       console.log(`✅ SUCCESS: Labeled as ${classification}, kept in INBOX`);
