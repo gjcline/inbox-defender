@@ -119,7 +119,7 @@ export function Landing() {
                 alt="Inbox Defender logo"
                 className="h-8 w-8"
               />
-              <h1 className="text-2xl font-semibold text-white">Inbox Defender</h1>
+              <h1 className="text-2xl font-semibold text-white">Inbox Defender by Bliztic</h1>
             </div>
             <div className="flex items-center gap-6">
               <a href="#features" className="text-gray-300 hover:text-white transition-colors">Features</a>
