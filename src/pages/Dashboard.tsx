@@ -129,7 +129,7 @@ export function Dashboard() {
     try {
       const { data: allData, error: allError } = await supabase
         .from('emails')
-        .select('id, sender_email, subject, ai_confidence_score, received_at, classification')
+        .select('id, sender_email, subject, ai_confidence_score, received_at, classification, moved_to_folder')
         .eq('user_id', user?.id)
         .order('received_at', { ascending: false })
         .limit(100);
@@ -144,6 +144,7 @@ export function Dashboard() {
           score: email.ai_confidence_score || 0,
           dateISO: email.received_at,
           classification: email.classification || 'pending',
+          movedToFolder: email.moved_to_folder || false,
         }));
         setAllEmails(mappedAllEmails);
 

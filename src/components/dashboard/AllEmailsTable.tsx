@@ -8,6 +8,7 @@ export interface EmailWithStatus {
   score: number;
   dateISO: string;
   classification: string;
+  movedToFolder?: boolean;
 }
 
 interface AllEmailsTableProps {
@@ -40,33 +41,65 @@ const SkeletonRow = () => (
 );
 
 const getClassificationBadge = (classification: string) => {
-  switch (classification) {
-    case 'blocked':
+  switch (classification?.toLowerCase()) {
+    case 'personal':
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+          Personal
+        </span>
+      );
+    case 'conversations':
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-purple-500/10 text-purple-400 border border-purple-500/20">
+          <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
+          Conversations
+        </span>
+      );
+    case 'inbox':
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20">
+          <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+          Inbox
+        </span>
+      );
+    case 'marketing':
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-orange-500/10 text-orange-400 border border-orange-500/20">
+          <span className="w-1.5 h-1.5 rounded-full bg-orange-400" />
+          Marketing
+        </span>
+      );
+    case 'cold_outreach':
+    case 'cold outreach':
       return (
         <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-red-500/10 text-red-400 border border-red-500/20">
           <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
-          Blocked
+          Cold Outreach
+        </span>
+      );
+    case 'spam':
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-zinc-700/50 text-zinc-400 border border-zinc-600/20">
+          <span className="w-1.5 h-1.5 rounded-full bg-zinc-400" />
+          Spam
         </span>
       );
     case 'pending':
+    case null:
+    case undefined:
+    case '':
       return (
         <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
           <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
           Pending
         </span>
       );
-    case 'safe':
-      return (
-        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-          Safe
-        </span>
-      );
     default:
       return (
         <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-zinc-700/50 text-zinc-400 border border-zinc-600/20">
           <span className="w-1.5 h-1.5 rounded-full bg-zinc-400" />
-          Unknown
+          {classification || 'Unknown'}
         </span>
       );
   }
@@ -80,7 +113,17 @@ export const AllEmailsTable = ({ emails, onRestore, loading = false }: AllEmails
     const matchesSearch =
       email.sender.toLowerCase().includes(searchTerm.toLowerCase()) ||
       email.subject.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesFilter = filterStatus === 'all' || email.classification === filterStatus;
+
+    let matchesFilter = false;
+    if (filterStatus === 'all') {
+      matchesFilter = true;
+    } else if (filterStatus === 'pending') {
+      matchesFilter = !email.classification || email.classification === 'pending';
+    } else {
+      matchesFilter = email.classification?.toLowerCase() === filterStatus.toLowerCase() ||
+                      email.classification?.toLowerCase().replace(' ', '_') === filterStatus.toLowerCase();
+    }
+
     return matchesSearch && matchesFilter;
   });
 
@@ -105,9 +148,13 @@ export const AllEmailsTable = ({ emails, onRestore, loading = false }: AllEmails
 
   const statusCounts = {
     all: emails.length,
-    blocked: emails.filter(e => e.classification === 'blocked').length,
-    pending: emails.filter(e => e.classification === 'pending').length,
-    safe: emails.filter(e => e.classification === 'safe').length,
+    pending: emails.filter(e => !e.classification || e.classification === 'pending').length,
+    personal: emails.filter(e => e.classification?.toLowerCase() === 'personal').length,
+    conversations: emails.filter(e => e.classification?.toLowerCase() === 'conversations').length,
+    inbox: emails.filter(e => e.classification?.toLowerCase() === 'inbox').length,
+    marketing: emails.filter(e => e.classification?.toLowerCase() === 'marketing').length,
+    cold_outreach: emails.filter(e => e.classification?.toLowerCase() === 'cold_outreach' || e.classification?.toLowerCase() === 'cold outreach').length,
+    spam: emails.filter(e => e.classification?.toLowerCase() === 'spam').length,
   };
 
   return (
@@ -158,24 +205,64 @@ export const AllEmailsTable = ({ emails, onRestore, loading = false }: AllEmails
             Pending ({statusCounts.pending})
           </button>
           <button
-            onClick={() => setFilterStatus('blocked')}
+            onClick={() => setFilterStatus('personal')}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-              filterStatus === 'blocked'
-                ? 'bg-red-500/20 text-red-400 border border-red-500/30'
-                : 'bg-zinc-800 text-zinc-400 border border-zinc-700 hover:bg-zinc-700'
-            }`}
-          >
-            Blocked ({statusCounts.blocked})
-          </button>
-          <button
-            onClick={() => setFilterStatus('safe')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-              filterStatus === 'safe'
+              filterStatus === 'personal'
                 ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                 : 'bg-zinc-800 text-zinc-400 border border-zinc-700 hover:bg-zinc-700'
             }`}
           >
-            Safe ({statusCounts.safe})
+            Personal ({statusCounts.personal})
+          </button>
+          <button
+            onClick={() => setFilterStatus('conversations')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+              filterStatus === 'conversations'
+                ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
+                : 'bg-zinc-800 text-zinc-400 border border-zinc-700 hover:bg-zinc-700'
+            }`}
+          >
+            Conversations ({statusCounts.conversations})
+          </button>
+          <button
+            onClick={() => setFilterStatus('inbox')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+              filterStatus === 'inbox'
+                ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                : 'bg-zinc-800 text-zinc-400 border border-zinc-700 hover:bg-zinc-700'
+            }`}
+          >
+            Inbox ({statusCounts.inbox})
+          </button>
+          <button
+            onClick={() => setFilterStatus('marketing')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+              filterStatus === 'marketing'
+                ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30'
+                : 'bg-zinc-800 text-zinc-400 border border-zinc-700 hover:bg-zinc-700'
+            }`}
+          >
+            Marketing ({statusCounts.marketing})
+          </button>
+          <button
+            onClick={() => setFilterStatus('cold_outreach')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+              filterStatus === 'cold_outreach'
+                ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                : 'bg-zinc-800 text-zinc-400 border border-zinc-700 hover:bg-zinc-700'
+            }`}
+          >
+            Cold Outreach ({statusCounts.cold_outreach})
+          </button>
+          <button
+            onClick={() => setFilterStatus('spam')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+              filterStatus === 'spam'
+                ? 'bg-zinc-600/20 text-zinc-300 border border-zinc-500/30'
+                : 'bg-zinc-800 text-zinc-400 border border-zinc-700 hover:bg-zinc-700'
+            }`}
+          >
+            Spam ({statusCounts.spam})
           </button>
         </div>
       </div>
@@ -245,14 +332,20 @@ export const AllEmailsTable = ({ emails, onRestore, loading = false }: AllEmails
                     {formatDate(email.dateISO)}
                   </td>
                   <td className="py-3 px-4">
-                    {email.classification === 'blocked' && (
-                      <button
-                        onClick={() => onRestore(email.id)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-zinc-300 bg-zinc-800 border border-zinc-700 rounded-lg hover:bg-zinc-700 hover:text-white transition-colors"
-                      >
-                        <RotateCcw className="w-3 h-3" />
-                        Restore
-                      </button>
+                    {email.classification && email.classification !== 'pending' ? (
+                      email.movedToFolder ? (
+                        <span className="text-xs text-zinc-400">
+                          Moved to {email.classification.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-emerald-400">
+                          Classified
+                        </span>
+                      )
+                    ) : (
+                      <span className="text-xs text-amber-400">
+                        Pending
+                      </span>
                     )}
                   </td>
                 </tr>
