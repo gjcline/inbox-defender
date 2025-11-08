@@ -68,7 +68,6 @@ export function buildAuthUrl(userId: string): string {
   authUrl.searchParams.append('scope', OAUTH_SCOPES);
   authUrl.searchParams.append('access_type', 'offline');
   authUrl.searchParams.append('prompt', 'consent');
-  authUrl.searchParams.append('include_granted_scopes', 'true');
   authUrl.searchParams.append('state', state);
 
   const fullUrl = authUrl.toString();
