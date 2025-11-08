@@ -563,7 +563,6 @@ export function OAuthDiagnostics() {
                 <div className="mt-3 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                   <p className="text-sm font-medium text-blue-900 mb-2">Required Scopes:</p>
                   <ul className="text-xs text-blue-800 space-y-1">
-                    <li>✓ gmail.readonly - Read email messages</li>
                     <li>✓ gmail.modify - Modify/label emails</li>
                     <li>✓ gmail.labels - Create/manage labels</li>
                     <li>✓ userinfo.email - Access user email</li>

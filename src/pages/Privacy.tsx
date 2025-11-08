@@ -98,7 +98,7 @@ export function Privacy() {
             <section>
               <h2 className="text-2xl font-semibold text-white mb-3">6) Google API disclosure</h2>
               <p>
-                Inbox Defender's use of information received from Google APIs will adhere to the Google API Services User Data Policy, including the Limited Use requirements. We request the minimum scopes (e.g., gmail.readonly/gmail.metadata and gmail.modify), use the data only to deliver user-facing features, do not transfer it except as necessary to provide the service, and do not use it to build profiles unrelated to Inbox Defender.
+                Inbox Defender's use of information received from Google APIs will adhere to the Google API Services User Data Policy, including the Limited Use requirements. We request the minimum scopes (gmail.modify and gmail.labels), use the data only to deliver user-facing features, do not transfer it except as necessary to provide the service, and do not use it to build profiles unrelated to Inbox Defender.
               </p>
             </section>
 
